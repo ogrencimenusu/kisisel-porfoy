@@ -1,0 +1,179 @@
+/* Custom styles for Bootstrap app */
+body {
+  margin: 0;
+  padding: 0;
+}
+/*
+  kartlar sayfasındaki yapı şöyle olucak.
+  1. Banka ekleme çıkarma
+  1.1 banka hesap ekleme çıkarma
+  1.2 banka kart ekleme çıkarma.
+
+  bu ekleme ve çıkarmalara birer link ekle.
+  ardından sayfada ekli kart, hesap ve bankalar listelensin
+*/
+
+/* Theme variables (read from Bootstrap tokens) */
+:root {
+  --bg: var(--bs-body-bg);
+  --text: var(--bs-body-color);
+  --card-bg: var(--bs-body-bg);
+  --muted: var(--bs-secondary-color);
+  --seg-bg: var(--bs-secondary-bg);
+  --seg-active: var(--bs-body-bg);
+  --seg-border: var(--bs-border-color);
+  --seg-text-active: var(--bs-emphasis-color);
+  --seg-text-inactive: var(--bs-secondary-color);
+  --switch-track: var(--bs-secondary-bg);
+  --switch-thumb: var(--bs-body-bg);
+  --switch-on: #34c759;
+  --sheet-bg: var(--bs-body-bg);
+  --sheet-backdrop: rgba(0,0,0,0.45);
+  --sheet-shadow: 0 -10px 30px rgba(0,0,0,0.08);
+}
+
+/* Light theme (default) */
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.card {
+  background-color: var(--card-bg);
+  color: var(--text);
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+.navbar, .btn-link, .form-control, .form-select {
+  color: var(--text);
+}
+
+.text-muted { color: var(--muted) !important; }
+
+/* Bootstrap controls color mode via [data-bs-theme]; no per-mode variables needed here */
+
+/* Specific tweaks for dark mode elements */
+body.dark-theme .card {
+  border-color: rgba(255,255,255,0.06);
+}
+
+body.dark-theme .navbar, body.dark-theme .btn-link {
+  color: var(--text);
+}
+
+body.dark-theme .form-control, body.dark-theme .form-select {
+  background-color: rgba(255,255,255,0.02);
+  color: var(--text);
+  border-color: rgba(255,255,255,0.06);
+}
+
+body.dark-theme .btn-outline-danger {
+  color: #ffd6d6;
+  border-color: rgba(255,150,150,0.12);
+}
+
+/* Small helpers */
+.card, .btn, .form-control, .form-select { transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease; }
+
+/* reload trigger */
+
+/* Bottom navigation theming */
+/* Bottom navigation theming with Bootstrap color modes */
+.navbar.fixed-bottom { transition: background-color 200ms ease, color 200ms ease; }
+[data-bs-theme="light"] .navbar.fixed-bottom { background-color: rgba(255,255,255,0.95); }
+[data-bs-theme="light"] .navbar.fixed-bottom .btn-link { color: rgba(0,0,0,0.6); }
+[data-bs-theme="dark"] .navbar.fixed-bottom { background-color: rgba(33,37,41,0.7); backdrop-filter: blur(6px); }
+[data-bs-theme="dark"] .navbar.fixed-bottom .btn-link { color: rgba(230,238,248,0.8); }
+[data-bs-theme="dark"] .navbar.fixed-bottom .btn-link.text-primary { color: #8ab4ff !important; }
+
+/* iOS-like segmented control */
+.segmented-control {
+  display: inline-flex;
+  background-color: var(--seg-bg);
+  border-radius: 12px;
+  padding: 3px;
+  border: 1px solid var(--seg-border);
+}
+.segmented-control button {
+  border: none;
+  background: transparent;
+  color: var(--seg-text-inactive);
+  padding: 6px 14px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.segmented-control button.active {
+  background: var(--seg-active);
+  color: var(--seg-text-active);
+}
+.segmented-control button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* iOS-like switch */
+.ios-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 52px;
+  height: 32px;
+  background: var(--switch-track);
+  border-radius: 16px;
+  position: relative;
+  outline: none;
+  transition: background-color 200ms ease;
+  cursor: pointer;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+[data-bs-theme="dark"] .ios-switch {
+  border-color: rgba(255,255,255,0.12);
+}
+.ios-switch::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 28px;
+  height: 28px;
+  background: var(--switch-thumb);
+  border-radius: 50%;
+  transform: translate(0, -50%);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.ios-switch:checked {
+  background: var(--switch-on);
+}
+.ios-switch:checked::after {
+  transform: translate(20px, -50%);
+}
+
+/* List item cards (avatar + title + subtitle bubble) */
+.list-item-card {
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.list-item-card .avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bs-secondary-bg);
+  border: 1px solid var(--bs-border-color);
+  overflow: hidden;
+}
+.list-item-card .subtitle-bubble {
+  display: inline-block;
+  background: var(--bs-secondary-bg);
+  color: var(--bs-secondary-color);
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+.list-item-card img.avatar-img { width: 100%; height: 100%; object-fit: contain; }
+
