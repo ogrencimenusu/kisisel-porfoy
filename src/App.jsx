@@ -32,6 +32,30 @@ function App() {
   useEffect(() => {
     const themeToSet = effectiveTheme === 'dark' ? 'dark' : 'light'
     document.documentElement.setAttribute('data-bs-theme', themeToSet)
+    // Keep browser status bar (theme-color) in sync with app theme
+    const DARK_COLOR = '#212529' // Bootstrap dark body bg
+    const LIGHT_COLOR = '#ffffff'
+
+    // If user explicitly chooses a theme, override system meta using a dynamic tag.
+    // Otherwise, remove dynamic tag to let media-query meta tags take effect.
+    const ensureDynamicMeta = () => {
+      let meta = document.querySelector('meta[name="theme-color"][data-dynamic="true"]')
+      if (!meta) {
+        meta = document.createElement('meta')
+        meta.setAttribute('name', 'theme-color')
+        meta.setAttribute('data-dynamic', 'true')
+        document.head.appendChild(meta)
+      }
+      return meta
+    }
+
+    if (themePreference !== 'system') {
+      const meta = ensureDynamicMeta()
+      meta.setAttribute('content', themeToSet === 'dark' ? DARK_COLOR : LIGHT_COLOR)
+    } else {
+      const meta = document.querySelector('meta[name="theme-color"][data-dynamic="true"]')
+      if (meta) document.head.removeChild(meta)
+    }
   }, [effectiveTheme])
 
   useEffect(() => {
