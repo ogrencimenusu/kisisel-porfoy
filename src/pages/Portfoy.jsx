@@ -220,6 +220,10 @@ const Portfoy = ({ onBack }) => {
         return isNaN(num) ? 0 : num
       }
 
+      const stripCurrencySymbols = (value) => {
+        return (value == null ? '' : String(value)).replace(/[₺$€]/g, '').trim()
+      }
+
       const formatBirim = (birim) => {
         if (birim === 'TRY' || birim === '₺') return '₺'
         if (birim === 'USD' || birim === '$') return 'USD'
@@ -243,20 +247,13 @@ const Portfoy = ({ onBack }) => {
         return null
       }
 
-      const formatTryNumber = (num) => {
-        try {
-          const n = typeof num === 'number' ? num : parseFloat(String(num).replace(/\./g, '').replace(/,/g, '.').replace(/[^0-9.-]/g, ''))
-          if (isNaN(n)) return '0,00'
-          return n.toFixed(2).replace('.', ',')
-        } catch { return '0,00' }
-      }
+      // KALDIRILDI: TRY'yi 2 haneye zorlayan formatTryNumber; TEFAS gibi varlıklar daha fazla hane kullanır
 
       const transactions = dataRows.map((cols) => {
         const platform = (iPlatform >= 0 ? cols[iPlatform] : '') || ''
         const sembolBorsa = (iSembolBorsa >= 0 ? cols[iSembolBorsa] : '') || ''
         const sembol = (iSembol >= 0 ? cols[iSembol] : '') || ''
         const durum = (iDurum >= 0 ? cols[iDurum] : '') || ''
-        if ((durum || '').toLowerCase() === 'stopaj kesintisi') return null
         const marketNorm = ((sembolBorsa || '').toString().trim().toUpperCase())
         if (marketNorm === '-' || marketNorm === 'DÖVİZ' || marketNorm === 'DOVIZ') return null
         const adet = parseDecimalNumber(iAdet >= 0 ? cols[iAdet] : '')
@@ -265,7 +262,7 @@ const Portfoy = ({ onBack }) => {
         const symbolRec = symbolsData.find(s => (s.name || s.id) === (sembol || '') || s.id === (sembol || '').toUpperCase())
         let fiyat = 0
         if (symbolRec && symbolRec.desiredSample) {
-          const transformed = desiredTransformString(priceRaw, symbolRec.desiredSample, iBirim >= 0 ? cols[iBirim] : '')
+          const transformed = desiredTransformString(priceRaw, symbolRec.desiredSample, '')
           if (transformed) fiyat = parseDecimalNumber(transformed)
         }
         if (!fiyat) fiyat = parseDecimalNumber(priceRaw)
@@ -275,14 +272,26 @@ const Portfoy = ({ onBack }) => {
         const aciklamaVal = ((iAciklama >= 0 ? cols[iAciklama] : '') || '').toString().trim()
         const tarih = ((iTarih >= 0 ? cols[iTarih] : '') || '').toString().trim()
         const birimFormatted = formatBirim(birim)
+        // TRY için 2 ondalığa zorlamadan, desiredSample varsa onu uygula; yoksa ham metni sakla
+        let fiyatOut = fiyat
+        let komisyonOut = komisyon
+        if (birimFormatted === '₺') {
+          if (symbolRec && symbolRec.desiredSample) {
+            const transformedStr = desiredTransformString(priceRaw, symbolRec.desiredSample, '')
+            if (transformedStr) fiyatOut = transformedStr
+          } else {
+            fiyatOut = stripCurrencySymbols(priceRaw)
+          }
+          komisyonOut = stripCurrencySymbols(iKomisyon >= 0 ? (cols[iKomisyon] || '') : '')
+        }
         const out = {
           platform: getBankIdByName((platform || '').toString().trim()),
           sembolBorsa: (sembolBorsa || '').toString().trim(),
           sembol: getSymbolIdByName((sembol || '').toString().trim()),
           durum: durum || 'Alış',
           adet: adet,
-          fiyat: (birimFormatted === '₺') ? formatTryNumber(fiyat) : fiyat,
-          komisyon: (birimFormatted === '₺') ? formatTryNumber(komisyon) : komisyon,
+          fiyat: (birimFormatted === '₺') ? fiyatOut : fiyat,
+          komisyon: (birimFormatted === '₺') ? komisyonOut : komisyon,
           stopaj: 0,
           birim: birimFormatted,
           maaliyet: maaliyetVal,
@@ -572,13 +581,7 @@ const Portfoy = ({ onBack }) => {
       const bank = banks.find(b => b.name.toLowerCase() === platformName.toLowerCase())
       return bank ? bank.id : platformName // Bulunamazsa orijinal adı döndür
     }
-    const formatTryNumber = (num) => {
-      try {
-        const n = typeof num === 'number' ? num : parseFloat(String(num).replace(/\./g, '').replace(/,/g, '.').replace(/[^0-9.-]/g, ''))
-        if (isNaN(n)) return '0,00'
-        return n.toFixed(2).replace('.', ',')
-      } catch { return '0,00' }
-    }
+    // TRY 2 ondalık zorlamayı kaldırdık; desiredSample'a göre veya ham metin korunacak
 
     return dataLines.map((line, index) => {
       let columns = line.split('\t')
@@ -593,7 +596,6 @@ const Portfoy = ({ onBack }) => {
       const sembolBorsa = columns[1]?.trim() || ''
       const sembol = columns[2]?.trim() || ''
       const durum = columns[3]?.trim() || ''
-      if ((durum || '').toLowerCase() === 'stopaj kesintisi') return null
       const marketNorm = (sembolBorsa || '').toString().trim().toUpperCase()
       if (marketNorm === '-' || marketNorm === 'DÖVİZ' || marketNorm === 'DOVIZ') return null
       const adet = parseNumber(columns[4]) || 0
@@ -1014,6 +1016,13 @@ const Portfoy = ({ onBack }) => {
                     }
                     
                     const fifoTotals = calculateFIFO(list)
+                    const toplamStopaj = (() => {
+                      try {
+                        return list
+                          .filter(tx => (tx.durum || '').toLowerCase() === 'stopaj kesintisi')
+                          .reduce((sum, tx) => sum + (parseNumber(tx.maaliyet) || 0), 0)
+                      } catch { return 0 }
+                    })()
                     const isOpen = !!(expandedGroups[p.id] && expandedGroups[p.id][symbol])
                     const birim = list[0]?.birim
                     // Mevcut fiyat ve gerçekleşmemiş K/Z hesaplama
@@ -1070,7 +1079,8 @@ const Portfoy = ({ onBack }) => {
                                   const symCfg = symbolsData.find(s => s.id === symbolIdForGroup)
                                   const avgNum = fifoTotals.adet > 0 ? fifoTotals.maaliyet / fifoTotals.adet : 0
                                   const desiredStr = desiredTransformString(avgNum, symCfg?.desiredSample, birim)
-                               
+                                  if (desiredStr) return <>Ort. Fiyat: {desiredStr}{toplamStopaj ? <> | Toplam Stopaj: {formatNumber(toplamStopaj, birim)} {birim}</> : null}</>
+                                  return <>Ort. Alım Fiyat: {formatNumber(avgNum, birim)} {birim}{toplamStopaj ? <> | Toplam Stopaj: {formatNumber(toplamStopaj, birim)} {birim}</> : null}</>
                                 })()}
                                </div>
                              )}
@@ -1102,8 +1112,8 @@ const Portfoy = ({ onBack }) => {
                                 const symCfg = symbolsData.find(s => s.id === symbolIdForGroup)
                                 const avgNum = fifoTotals.adet > 0 ? fifoTotals.maaliyet / fifoTotals.adet : 0
                                 const desiredStr = desiredTransformString(avgNum, symCfg?.desiredSample, birim)
-                                if (desiredStr) return <>Ort. Fiyat: {desiredStr}</>
-                                return <>Ort. Alım Fiyat: {formatNumber(avgNum, birim)} {birim}</>
+                                if (desiredStr) return <>Ort. Fiyat: {desiredStr}{toplamStopaj ? <> | Toplam Stopaj: {formatNumber(toplamStopaj, birim)} {birim}</> : null}</>
+                                return <>Ort. Alım Fiyat: {formatNumber(avgNum, birim)} {birim}{toplamStopaj ? <> | Toplam Stopaj: {formatNumber(toplamStopaj, birim)} {birim}</> : null}</>
                               })()}
 
                               </span>
@@ -1411,7 +1421,7 @@ const Portfoy = ({ onBack }) => {
                     onChange={(e) => handleChange('sembolBorsa', e.target.value)}
                   >
                     <option value="">Seçiniz</option>
-                    <option value="Tefaş">Tefaş</option>
+                    <option value="TEFAS">TEFAS</option>
                     <option value="BIST">BIST</option>
                     <option value="NYSE">NYSE</option>
                     <option value="BATS">BATS</option>
@@ -1419,7 +1429,7 @@ const Portfoy = ({ onBack }) => {
                     <option value="KRIPTO">KRIPTO</option>
                   </select>
                 </div>
-                {formData.sembolBorsa === 'Tefaş' && (
+                {formData.sembolBorsa === 'TEFAS' && (
                   <div className="col-12 col-md-6">
                     <label className="form-label">Stopaj Oranı</label>
                     <div className="input-group">
@@ -1487,6 +1497,7 @@ const Portfoy = ({ onBack }) => {
                     <option>Alış</option>
                     <option>Satış</option>
                     <option>Temettü</option>
+                    <option>Stopaj Kesintisi</option>
                   </select>
                 </div>
                 <div className="col-12 col-md-6">
