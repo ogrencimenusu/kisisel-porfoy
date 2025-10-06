@@ -51,7 +51,7 @@ const Portfoy = ({ onBack }) => {
   const [expandedGroups, setExpandedGroups] = useState({})
   const [hideZeroHoldings, setHideZeroHoldings] = useState(false)
   const [showSortSheet, setShowSortSheet] = useState(false)
-  const [sortOption, setSortOption] = useState('') // 'date' | 'symbol' | 'quantity'
+  const [sortOption, setSortOption] = useState('symbol_asc') // 'symbol_asc' | 'symbol_desc' | 'date_asc' | 'date_desc' | 'quantity_asc' | 'quantity_desc'
   const [sheetPrices, setSheetPrices] = useState({})
 
   useEffect(() => {
@@ -929,7 +929,7 @@ const Portfoy = ({ onBack }) => {
                 </button>
               </div>
             </div>
-            <div className="list-group list-group-flush">
+              <div className="list-group list-group-flush">
               {Array.isArray(transactionsByPortfolio[p.id]) && transactionsByPortfolio[p.id].length > 0 ? (
                 (() => {
                   const grouped = transactionsByPortfolio[p.id].reduce((acc, tx) => {
@@ -943,11 +943,8 @@ const Portfoy = ({ onBack }) => {
                     acc[key].push(tx)
                     return acc
                   }, {})
-                  return Object.keys(grouped).sort().map(symbol => {
-                    const list = grouped[symbol]
-                    
-                    // FIFO hesaplaması
-                    const calculateFIFO = (transactions) => {
+                  // FIFO hesaplaması
+                  const calculateFIFO = (transactions) => {
                       // Tarihe göre sırala (en eski önce)
                       const sortedTx = [...transactions].sort((a, b) => {
                         const dateA = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
@@ -1014,8 +1011,29 @@ const Portfoy = ({ onBack }) => {
                         toplamSatisGelir: toplamSatisGelir
                       }
                     }
-                    
+
+                  const entries = Object.keys(grouped).map(symbol => {
+                    const list = grouped[symbol]
                     const fifoTotals = calculateFIFO(list)
+                    const lastDate = list.reduce((max, tx) => {
+                      const d = tx.tarih instanceof Date ? tx.tarih : (tx.tarih?.toDate?.() || new Date(0))
+                      return d > max ? d : max
+                    }, new Date(0))
+                    return { symbol, list, fifoTotals, lastDate }
+                  })
+
+                  const sortedEntries = (() => {
+                    const so = (sortOption || 'symbol_asc').toString()
+                    if (so === 'symbol_desc') return entries.sort((a, b) => b.symbol.localeCompare(a.symbol))
+                    if (so === 'symbol_asc') return entries.sort((a, b) => a.symbol.localeCompare(b.symbol))
+                    if (so === 'quantity_desc') return entries.sort((a, b) => (b.fifoTotals.adet || 0) - (a.fifoTotals.adet || 0))
+                    if (so === 'quantity_asc') return entries.sort((a, b) => (a.fifoTotals.adet || 0) - (b.fifoTotals.adet || 0))
+                    if (so === 'date_desc') return entries.sort((a, b) => (b.lastDate?.getTime?.() || 0) - (a.lastDate?.getTime?.() || 0))
+                    if (so === 'date_asc') return entries.sort((a, b) => (a.lastDate?.getTime?.() || 0) - (b.lastDate?.getTime?.() || 0))
+                    return entries.sort((a, b) => a.symbol.localeCompare(b.symbol))
+                  })()
+
+                  return sortedEntries.map(({ symbol, list, fifoTotals }) => {
                     const toplamStopaj = (() => {
                       try {
                         return list
@@ -1713,21 +1731,53 @@ const Portfoy = ({ onBack }) => {
 
             <div className="modal-body">
               <div className="list-group list-group-flush">
-                <button className="list-group-item list-group-item-action" onClick={async () => {
-                  setSortOption('date')
-                  setShowSortSheet(false)
-                  try { await saveUiPrefs({ portfolioSortOption: 'date' }) } catch (_) {}
-                }}>Tarihe göre sırala</button>
-                <button className="list-group-item list-group-item-action" onClick={async () => {
-                  setSortOption('symbol')
-                  setShowSortSheet(false)
-                  try { await saveUiPrefs({ portfolioSortOption: 'symbol' }) } catch (_) {}
-                }}>Hisse adına göre sırala</button>
-                <button className="list-group-item list-group-item-action" onClick={async () => {
-                  setSortOption('quantity')
-                  setShowSortSheet(false)
-                  try { await saveUiPrefs({ portfolioSortOption: 'quantity' }) } catch (_) {}
-                }}>Adete göre sırala</button>
+                <div className="list-group-item fw-semibold d-flex align-items-center justify-content-between">
+                  <span>Hisse adına göre</span>
+                  <div className="btn-group">
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('symbol_asc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'symbol_asc' }) } catch (_) {}
+                    }}>A → Z</button>
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('symbol_desc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'symbol_desc' }) } catch (_) {}
+                    }}>Z → A</button>
+                  </div>
+                </div>
+
+                <div className="list-group-item fw-semibold d-flex align-items-center justify-content-between mt-2">
+                  <span>Tarihe göre (son işlem)</span>
+                  <div className="btn-group">
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('date_desc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'date_desc' }) } catch (_) {}
+                    }}>Yeni → Eski</button>
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('date_asc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'date_asc' }) } catch (_) {}
+                    }}>Eski → Yeni</button>
+                  </div>
+                </div>
+
+                <div className="list-group-item fw-semibold d-flex align-items-center justify-content-between mt-2">
+                  <span>Adete göre</span>
+                  <div className="btn-group">
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('quantity_desc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'quantity_desc' }) } catch (_) {}
+                    }}>9 → 0</button>
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('quantity_asc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'quantity_asc' }) } catch (_) {}
+                    }}>0 → 9</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
