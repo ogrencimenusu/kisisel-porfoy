@@ -49,6 +49,7 @@ const Portfoy = ({ onBack }) => {
   })
   const [editingTx, setEditingTx] = useState(null)
   const [expandedGroups, setExpandedGroups] = useState({})
+  const [expandedPortfolios, setExpandedPortfolios] = useState({})
   const [hideZeroHoldings, setHideZeroHoldings] = useState(false)
   const [showSortSheet, setShowSortSheet] = useState(false)
   const [sortOption, setSortOption] = useState('symbol_asc') // 'symbol_asc' | 'symbol_desc' | 'date_asc' | 'date_desc' | 'quantity_asc' | 'quantity_desc'
@@ -863,7 +864,10 @@ const Portfoy = ({ onBack }) => {
         {portfolios.map((p) => (
           <div key={p.id} className="card shadow-sm border-0">
             <div className="card-body d-flex align-items-center justify-content-between">
-              <div className="d-flex align-items-center gap-3">
+              <div className="d-flex align-items-center gap-3" role="button" onClick={() => {
+                setExpandedPortfolios(prev => ({ ...prev, [p.id]: !prev[p.id] }))
+              }}>
+                <i className={`bi ${expandedPortfolios[p.id] ? 'bi-caret-down' : 'bi-caret-right'}`}></i>
                 <div className="rounded-3 d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px', background: 'var(--bs-tertiary-bg)' }}>
                   <i className="bi bi-folder2" style={{ fontSize: '1.2rem' }}></i>
                 </div>
@@ -929,6 +933,7 @@ const Portfoy = ({ onBack }) => {
                 </button>
               </div>
             </div>
+              {expandedPortfolios[p.id] && (
               <div className="list-group list-group-flush">
               {Array.isArray(transactionsByPortfolio[p.id]) && transactionsByPortfolio[p.id].length > 0 ? (
                 (() => {
@@ -1019,13 +1024,16 @@ const Portfoy = ({ onBack }) => {
                       const d = tx.tarih instanceof Date ? tx.tarih : (tx.tarih?.toDate?.() || new Date(0))
                       return d > max ? d : max
                     }, new Date(0))
-                    return { symbol, list, fifoTotals, lastDate }
+                    const typeKey = (list[0]?.sembolBorsa || '').toString()
+                    return { symbol, list, fifoTotals, lastDate, typeKey }
                   })
 
                   const sortedEntries = (() => {
                     const so = (sortOption || 'symbol_asc').toString()
                     if (so === 'symbol_desc') return entries.sort((a, b) => b.symbol.localeCompare(a.symbol))
                     if (so === 'symbol_asc') return entries.sort((a, b) => a.symbol.localeCompare(b.symbol))
+                    if (so === 'type_desc') return entries.sort((a, b) => (b.typeKey || '').localeCompare(a.typeKey || '') || a.symbol.localeCompare(b.symbol))
+                    if (so === 'type_asc') return entries.sort((a, b) => (a.typeKey || '').localeCompare(b.typeKey || '') || a.symbol.localeCompare(b.symbol))
                     if (so === 'quantity_desc') return entries.sort((a, b) => (b.fifoTotals.adet || 0) - (a.fifoTotals.adet || 0))
                     if (so === 'quantity_asc') return entries.sort((a, b) => (a.fifoTotals.adet || 0) - (b.fifoTotals.adet || 0))
                     if (so === 'date_desc') return entries.sort((a, b) => (b.lastDate?.getTime?.() || 0) - (a.lastDate?.getTime?.() || 0))
@@ -1061,7 +1069,23 @@ const Portfoy = ({ onBack }) => {
                         }}>
                           <div className="d-flex  gap-2 align-items-start">
                             <i className={`bi ${isOpen ? 'bi-caret-down' : 'bi-caret-right'}`}></i>
-                            <span className="fw-semibold">
+                            <div className="d-flex align-items-start gap-2">
+                              <div className="avatar">
+                                {(() => {
+                                  const symbolIdForGroup = list[0]?.sembol
+                                  const symCfg = symbolsData.find(s => s.id === symbolIdForGroup)
+                                  const url = symCfg?.logoUrl
+                                  if (url) {
+                                    return (
+                                      <div className="avatar-img-container rounded-3 border border-secondary overflow-hidden">
+                                        <img src={url} alt={`${symCfg?.name || symCfg?.id || 'Sembol'} logosu`} className="avatar-img" />
+                                      </div>
+                                    )
+                                  }
+                                  return <i className="bi bi-tag" style={{ fontSize: '1.2rem' }}></i>
+                                })()}
+                              </div>
+                              <span className="fw-semibold">
                               {symbol} 
                               <br />
                               <span className='' style={{fontSize: '0.8rem'}}>
@@ -1070,8 +1094,8 @@ const Portfoy = ({ onBack }) => {
                                 return val ? val : '—'
                               })()} {birim}
                               </span>
-
-                            </span>
+                              </span>
+                            </div>
                             <div></div>
                           </div>
                           <div className="text-end">
@@ -1090,7 +1114,7 @@ const Portfoy = ({ onBack }) => {
                                 )}
                               </div>
                             )}
-                            {fifoTotals.adet > 0 && (
+                            {/*fifoTotals.adet > 0 && (
                                <div className="text-success small">
                                 {(() => {
                                   const symbolIdForGroup = list[0]?.sembol
@@ -1101,7 +1125,7 @@ const Portfoy = ({ onBack }) => {
                                   return <>Ort. Alım Fiyat: {formatNumber(avgNum, birim)} {birim}{toplamStopaj ? <> | Toplam Stopaj: {formatNumber(toplamStopaj, birim)} {birim}</> : null}</>
                                 })()}
                                </div>
-                             )}
+                             )*/}
                             {false && fifoTotals.adet === 0 && fifoTotals.karZarar !== 0 && (
                               <div className={`small ${fifoTotals.karZarar > 0 ? 'text-success' : 'text-danger'}`}>
                                 <div className="fw-semibold">
@@ -1117,14 +1141,14 @@ const Portfoy = ({ onBack }) => {
                         {isOpen && (
                           <div className="list-group list-group-flush">
 
-                            <div className='d-flex flex-row  gap-1 p-3'>
-                            <span className="text-small d-block font-weight-normal" style={{fontSize: '0.5rem'}}>
-                              {fifoTotals.adet > 0 ? 'Kalan' : 'Toplam'}: {formatNumber(fifoTotals.adet)} adet
+                            <div className='d-flex flex-row  gap-1 p-1' style={{fontSize: '0.8rem'}}> 
+                            <span className="text-small d-block font-weight-normal" >
+                              {fifoTotals.adet > 0 ? 'Kalan Adet ' : 'Toplam Adet '}: {formatNumber(fifoTotals.adet)} 
                               </span>
-                              <span className="text-small d-block font-weight-normal" style={{fontSize: '0.5rem'}}>
-                              {fifoTotals.adet > 0 ? 'Kalan Maaliyet' : 'Toplam Maaliyet'}: {formatNumber(fifoTotals.maaliyet, birim)} {birim}
+                              <span className="text-small d-block font-weight-normal" >
+                               - {fifoTotals.adet > 0 ? 'Kalan Maaliyet' : 'Toplam Maaliyet'}: {formatNumber(fifoTotals.maaliyet, birim)} {birim}
                               </span>
-                              <span className="text-small d-block font-weight-normal" style={{fontSize: '0.5rem'}}>
+                              <span className="text-small d-block font-weight-normal" > -  
                               {(() => {
                                 const symbolIdForGroup = list[0]?.sembol
                                 const symCfg = symbolsData.find(s => s.id === symbolIdForGroup)
@@ -1138,18 +1162,18 @@ const Portfoy = ({ onBack }) => {
                             </div>
 
                             {list.map(tx => (
-                              <div key={tx.id} className="list-group-item d-flex align-items-center justify-content-between" style={{ background: 'var(--bs-tertiary-bg)' }}>
+                              <div key={tx.id} className="list-group-item bg-transparent d-flex align-items-center justify-content-between" >
                                 <div className="d-flex align-items-center justify-content-between w-100">
                                   <div className="d-flex flex-column">
-                                    <span className="fw-semibold">{tx.durum}</span>
-                                    <small className="text-body-secondary">
+                                    <span className="fw-semibold">{tx.durum} - <small className="text-body-secondary">
                                       {formatNumber(tx.adet)} Adet,  {(() => {
                                         const symCfg = symbolsData.find(s => s.id === tx.sembol)
                                         const desiredStr = desiredTransformString(tx.fiyat, symCfg?.desiredSample, tx.birim)
                                         if (desiredStr) return desiredStr
                                         return <>{formatNumber(tx.fiyat, tx.birim)} {tx.birim}</>
                                       })()}
-                                    </small>
+                                    </small></span>
+                                    
                                     <div>Maaliyet: {formatNumber(tx.maaliyet, tx.birim)} {tx.birim} </div>
                                   </div>
                                   <div className="d-flex align-items-center gap-3">
@@ -1226,6 +1250,7 @@ const Portfoy = ({ onBack }) => {
                 <div className="list-group-item text-body-secondary">Henüz işlem yok.</div>
               )}
             </div>
+            )}
           </div>
         ))}
         {portfolios.length === 0 && (
@@ -1743,6 +1768,22 @@ const Portfoy = ({ onBack }) => {
                       setSortOption('symbol_desc')
                       setShowSortSheet(false)
                       try { await saveUiPrefs({ portfolioSortOption: 'symbol_desc' }) } catch (_) {}
+                    }}>Z → A</button>
+                  </div>
+                </div>
+
+                <div className="list-group-item fw-semibold d-flex align-items-center justify-content-between mt-2">
+                  <span>Hisse türüne göre</span>
+                  <div className="btn-group">
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('type_asc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'type_asc' }) } catch (_) {}
+                    }}>A → Z</button>
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('type_desc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'type_desc' }) } catch (_) {}
                     }}>Z → A</button>
                   </div>
                 </div>

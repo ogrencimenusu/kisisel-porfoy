@@ -21,7 +21,8 @@ const Semboller = ({ onBack }) => {
     sheetUrl: '',
     sheetCell: '',
     sheetRegex: '',
-    desiredSample: ''
+    desiredSample: '',
+    logoUrl: null
   })
 
   useEffect(() => {
@@ -79,7 +80,8 @@ const Semboller = ({ onBack }) => {
       sheetUrl: symbol.sheetUrl || '',
       sheetCell: symbol.sheetCell || '',
       sheetRegex: symbol.sheetRegex || '',
-      desiredSample: symbol.desiredSample || ''
+      desiredSample: symbol.desiredSample || '',
+      logoUrl: symbol.logoUrl || null
     })
     setShowConfigSymbol(symbol)
   }
@@ -92,6 +94,7 @@ const Semboller = ({ onBack }) => {
       await setDoc(doc(db, 'symbols', showConfigSymbol.id), {
         name: showConfigSymbol.id,
         desiredSample: (symbolConfig.desiredSample || '').toString(),
+        logoUrl: symbolConfig.logoUrl || null,
         updatedAt: serverTimestamp(),
         createdAt: showConfigSymbol.createdAt || serverTimestamp()
       })
@@ -104,13 +107,24 @@ const Semboller = ({ onBack }) => {
         sheetUrl: '',
         sheetCell: '',
         sheetRegex: '',
-        desiredSample: ''
+        desiredSample: '',
+        logoUrl: null
       })
       
       try { window.alert('Sembol yapılandırması kaydedildi.') } catch {}
     } catch (e) {
       try { window.alert('Yapılandırma kaydedilirken bir hata oluştu.') } catch {}
     }
+  }
+
+  const handleLogoSelect = (e) => {
+    const file = e.target.files && e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setSymbolConfig(prev => ({ ...prev, logoUrl: ev.target.result }))
+    }
+    reader.readAsDataURL(file)
   }
 
   const getApiTypeLabel = (apiType) => {
@@ -452,9 +466,15 @@ const Semboller = ({ onBack }) => {
         {symbols.map((symbol) => (
           <div key={symbol.id} className="card shadow-sm border-0">
             <div className="card-body d-flex align-items-center justify-content-between">
-              <div className="d-flex align-items-center gap-3">
-                <div className="rounded-3 d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px', background: 'var(--bs-tertiary-bg)' }}>
-                  <i className="bi bi-tag" style={{ fontSize: '1.2rem' }}></i>
+                <div className="d-flex align-items-center gap-3">
+                <div className="avatar">
+                  {symbol.logoUrl ? (
+                    <div className="avatar-img-container rounded-3 border border-secondary overflow-hidden">
+                      <img src={symbol.logoUrl} alt={`${symbol.name || symbol.id} logosu`} className="avatar-img" />
+                    </div>
+                  ) : (
+                    <i className="bi bi-tag" style={{ fontSize: '1.2rem' }}></i>
+                  )}
                 </div>
               <div className="d-flex flex-column">
                 <span className="fw-semibold">{symbol.name || symbol.id}</span>
@@ -669,6 +689,62 @@ const Semboller = ({ onBack }) => {
 
             <div className="modal-body">
               <div className="row g-3">
+                <div className="col-12">
+                  <label className="form-label">Logo</label>
+                  <div className="text-center d-flex justify-content-center">
+                    {symbolConfig.logoUrl ? (
+                      <div className="mb-3">
+                        <img 
+                          src={symbolConfig.logoUrl} 
+                          alt="Sembol logosu önizleme"
+                          className="img-fluid rounded"
+                          style={{ 
+                            maxWidth: '120px', 
+                            maxHeight: '120px',
+                            objectFit: 'contain',
+                            border: '2px solid #dee2e6'
+                          }}
+                        />
+                        <div className="mt-2 d-flex gap-2 justify-content-center">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => setSymbolConfig(prev => ({ ...prev, logoUrl: null }))}
+                          >
+                            <i className="bi bi-trash me-1"></i>Kaldır
+                          </button>
+                          <label className="btn btn-sm btn-outline-secondary mb-0">
+                            Değiştir
+                            <input type="file" accept="image/*" onChange={handleLogoSelect} hidden />
+                          </label>
+                        </div>
+                      </div>
+                    ) : (
+                      <div 
+                        className="border border-dashed rounded p-4 mb-3"
+                        style={{ 
+                          borderColor: '#dee2e6',
+                          backgroundColor: '#f8f9fa',
+                          minHeight: '120px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <i className="bi bi-image text-muted mb-2" style={{ fontSize: '2rem' }}></i>
+                        <p className="text-muted mb-2">Sembol logosu seçin</p>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoSelect}
+                          className="form-control"
+                          style={{ maxWidth: '200px' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <div className="col-12">
                   <label className="form-label">Örnek değer (istenen format)</label>
                   <input 
