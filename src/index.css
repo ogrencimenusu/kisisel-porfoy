@@ -192,3 +192,217 @@ body.dark-theme .btn-outline-danger {
   object-fit: cover;
 }
 
+
+.anasayfa-card {
+  display: flex
+  ;
+      overflow-y: hidden;
+}
+.anasayfa-card .card-list {
+  background-color: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  height: 150px;
+  display: flex;
+  align-items: end;
+  position: relative;
+  justify-content: space-between;
+  min-width: 360px;
+  margin-right: 20px;
+}
+.anasayfa-card .card-list img {
+  width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bs-secondary-bg);
+    border: 1px solid var(--bs-border-color);
+    position: absolute;
+    top: 14px;
+    left: 16px;
+}
+.anasayfa-card .card-list .btn-wrap {
+  position: absolute;
+    top: 7px;
+    left: 50px;
+}
+.anasayfa-card .card-list .btn-wrap button {
+  width: 100%;
+    border-radius: 10px;
+    padding: 6px 14px;
+    outline: 0;
+    box-shadow: unset;
+    border: 0 !important;
+    font-weight: normal;
+}
+.anasayfa-card .card-list .btn-wrap .btn-collapse {
+  margin-left: 10px;
+    margin-top: -8px;
+    font-size: 13px;
+}
+.anasayfa-card .card-list .card-aciksembol {
+  font-size: 12px;
+  color: var(--bs-secondary-color);
+  position: absolute;
+  top: 14px;
+  right: 16px;
+}
+.anasayfa-card .card-list .price {
+  margin-top: 12px;
+}
+.anasayfa-card .card-list .price .price-alis {
+  font-size: 9px;
+}
+.anasayfa-card .card-list .price .price-guncel {
+  font-size: 26px;
+}
+.anasayfa-card .card-list .price .price-kazanc {
+  font-size: 12px;
+}
+.anasayfa-giris { 
+
+}
+
+.anasayfa-portfoy {
+  display: flex
+  ;
+      overflow-y: hidden;
+      margin-top: 30px;
+      margin-bottom: 30px;
+}
+.anasayfa-portfoy .portfoy-wrap {
+  background-color: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+
+  display: flex;
+  align-items: end;
+  position: relative;
+  justify-content: space-between;
+  min-width: 43%;
+  margin-right: 20px;
+  
+}
+.anasayfa-portfoy .portfoy-wrap .hisse-sayisi {
+  position: absolute;
+  top: 34px;
+  right: unset;
+  font-size: 11px;
+}
+
+  .anasayfa-portfoy .portfoy-wrap .name {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    font-weight: bold;
+}
+.anasayfa-portfoy .portfoy-wrap .price {
+  height: 170px;
+  display: flex
+;
+  flex-direction: column;
+  justify-content: end;
+}
+.anasayfa-portfoy .portfoy-wrap .price .price-currency {
+  margin-top: 15px;
+  }
+.anasayfa-portfoy .portfoy-wrap .price .price-currency .alis { 
+  font-size: 11px;
+    margin-bottom: -7px;
+ }
+.anasayfa-portfoy .portfoy-wrap .price .price-currency .guncel {  }
+.anasayfa-portfoy .portfoy-wrap .price .price-kazanc { font-size: 10px;  }
+
+.anasayfa-tumehisse{}
+.anasayfa-tumehisse .tumhisse-wrap {
+  
+  display: grid
+;
+    grid-template-columns: repeat(2, minmax(49%, 1fr));
+    gap: 10px;
+  
+}
+.anasayfa-tumehisse .tumhisse-item {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 14px;
+  padding: 7px;
+}
+.anasayfa-tumehisse .tumhisse-item .hisse-fiyatlar {}
+
+.tumhisse-item {
+  background-color: #f0f0f0;
+  padding: 15px;
+  position: relative;
+}
+
+
+.tumhisse-item .hisse-fiyatlar {
+  display: none; /* Varsayılan olarak gizli */
+  background-color: #e0e0e0;
+  padding: 10px;
+  margin-top: 10px;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Hover olduğunda hisse-fiyatlar'ı göster */
+.tumhisse-item:hover .hisse-fiyatlar {
+  display: block;
+}
+.anasayfa-tumehisse .tumhisse-bilgiler-wrap{}
+.anasayfa-tumehisse .tumhisse-bilgiler-wrap .logo{
+  width: 30px;
+  height: 30px;
+  overflow: hidden;
+  display: flex
+;
+  align-items: center;
+  justify-content: center;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.anasayfa-tumehisse .tumhisse-bilgiler-wrap .logo img{
+  width: 100%;
+    height: 100%;
+}
+.anasayfa-tumehisse .tumhisse-bilgiler-wrap .logo i{}
+.anasayfa-tumehisse .tumhisse-bilgiler{
+  margin-top: 12px;
+}
+.anasayfa-tumehisse .tumhisse-bilgiler .tumhisse-guncel{
+  font-size: 14px;
+    position: absolute;
+    top: 21px;
+    left: 41px;
+}
+
+  .anasayfa-tumehisse .tumhisse-bilgiler .tumhisse-isim{ 
+  position: absolute;
+    left: 42px;
+    top: 4px;
+    font-weight: bold;
+}
+.anasayfa-tumehisse .tumhisse-bilgiler .tumhisse-adet{ 
+  position: absolute;
+  top: 8px;
+  right: 11px;
+  font-size: 12px;
+}
+.anasayfa-tumehisse .tumhisse-bilgiler .tumhisse-fiyat{
+  font-size: 14px;
+  font-weight: bold;
+}
+.anasayfa-tumehisse .tumhisse-bilgiler .tumhisse-kazanc{ 
+  font-size: 10px;
+    margin-top: -5px;
+}
+.anasayfa-tumehisse .hisse-fiyatlar{}
+.anasayfa-tumehisse .hisse-fiyatlar .guncel{}
+.anasayfa-tumehisse .hisse-fiyatlar .alis{}

@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { db } from '../firebase'
 import { fetchRowsFromNamedTab, fetchPriceMapsFromGlobalSheet } from '../services/sheetService'
 import { collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore'
+import HomePlatformCards from '../components/HomePlatformCards'
+import HomeStarredPortfolios from '../components/HomeStarredPortfolios'
+import HomeAllHoldings from '../components/HomeAllHoldings'
 
 const Anasayfa = () => {
   const [banks, setBanks] = useState([])
@@ -12,6 +15,7 @@ const Anasayfa = () => {
   const [currencyBySymbol, setCurrencyBySymbol] = useState(new Map())
   const [showConvertedTlByPlatform, setShowConvertedTlByPlatform] = useState({})
   const [symbolsData, setSymbolsData] = useState([])
+  const [expandedStarred, setExpandedStarred] = useState({})
 
   useEffect(() => {
     const unsubBanks = onSnapshot(collection(db, 'banks'), (snapshot) => {
@@ -250,14 +254,71 @@ const Anasayfa = () => {
 
   const platformIds = Object.keys(platformTotals)
 
+  const calcFifoRemaining = (list) => {
+    // Sort by date ascending
+    const sorted = [...list].sort((a, b) => {
+      const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
+      const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
+      return da - db
+    })
+    let remainingAdet = 0
+    let remainingMaaliyet = 0
+    const buys = []
+    sorted.forEach(tx => {
+      const adet = Number(parseNumber(tx.adet) || 0)
+      const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
+      const birimFiyat = adet > 0 ? (maaliyet / adet) : 0
+      if ((tx.durum || '') === 'Alış') {
+        buys.push({ adet, birimFiyat })
+        remainingAdet += adet
+        remainingMaaliyet += maaliyet
+      } else if ((tx.durum || '') === 'Satış') {
+        let sellLeft = adet
+        let sellCost = 0
+        while (sellLeft > 0 && buys.length > 0) {
+          const b = buys[0]
+          const use = Math.min(sellLeft, b.adet)
+          sellCost += use * b.birimFiyat
+          b.adet -= use
+          sellLeft -= use
+          if (b.adet <= 0) buys.shift()
+        }
+        remainingAdet -= adet
+        remainingMaaliyet -= sellCost
+      }
+    })
+    return { remainingAdet: Number(remainingAdet || 0), remainingMaaliyet: Number(remainingMaaliyet || 0) }
+  }
+
+  const allHoldings = useMemo(() => {
+    try {
+      const allTx = Object.values(transactionsByPortfolio).flat()
+      if (!Array.isArray(allTx) || allTx.length === 0) return []
+      const grouped = allTx.reduce((acc, tx) => {
+        const symbolId = (tx.sembol || '').toString()
+        if (!symbolId) return acc
+        acc[symbolId] = acc[symbolId] || []
+        acc[symbolId].push(tx)
+        return acc
+      }, {})
+      const entries = Object.keys(grouped).map(symId => {
+        const list = grouped[symId]
+        const fifo = calcFifoRemaining(list)
+        const cur = (list[0]?.birim === 'TRY' || list[0]?.birim === '₺') ? '₺' : (list[0]?.birim || '')
+        const unit = (symId || '').toString().toUpperCase()
+        const currentNum = Number(getDesiredPriceNum(unit) || 0)
+        const currentValue = currentNum > 0 ? Number(fifo.remainingAdet || 0) * currentNum : 0
+        return { symId, list, fifo, cur, currentNum, currentValue }
+      }).filter(e => (e.fifo.remainingAdet || 0) > 0)
+      // sort by symbol name asc
+      return entries.sort((a, b) => (a.symId || '').localeCompare(b.symId || ''))
+    } catch (_) { return [] }
+  }, [transactionsByPortfolio, priceBySymbol])
+
   return (
     <div className="container-fluid py-4">
+      {/*   TL fiyatları 
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <div className="d-flex align-items-center">
-          <h4 className="display-6 mb-0">
-            <i className="bi bi-house me-3"></i>Anasayfa
-          </h4>
-        </div>
         <div className="d-flex align-items-center gap-3 text-nowrap">
           {tlPrices.USD && (
             <span className="badge bg-light text-dark border"><i className="bi bi-currency-dollar me-1"></i>{tlPrices.USD}</span>
@@ -270,79 +331,34 @@ const Anasayfa = () => {
           )}
         </div>
       </div>
+      */}  
+      <div className="anasayfa-giris">
 
-      <div className="d-flex flex-column gap-2">
-        {platformIds.length === 0 && (
-          <div className="text-center text-body-secondary py-4">Henüz işlem yok.</div>
-        )}
-        {platformIds.map((pid) => {
-          const totals = platformTotals[pid]
-          const currencyKeys = Array.from(new Set([
-            ...Object.keys(totals.baseSums || {}),
-            ...Object.keys(totals.currentSums || {}),
-            ...Object.keys(totals.pnls || {}),
-          ]))
-          return (
-            <div key={pid} className="card shadow-sm border-0">
-              <div className="card-body d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center gap-3">
-                  <div className="rounded-3 d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px', background: 'var(--bs-tertiary-bg)' }}>
-                    {(() => {
-                      const b = banks.find(bk => bk.id === pid)
-                      const url = b?.imageUrl
-                      if (url) {
-                        return (
-                          <img src={url} alt="Banka" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
-                        )
-                      }
-                      return <i className="bi bi-building" style={{ fontSize: '1.2rem' }}></i>
-                    })()}
-                  </div>
-                </div>
-                <div className="text-end">
-                  <div className="text-body-secondary small mb-1">{totals.count} açık sembol</div>
-                  {currencyKeys.map((cur) => {
-                    const currentVal = (totals.currentSums && typeof totals.currentSums[cur] !== 'undefined') ? totals.currentSums[cur] : 0
-                    const baseVal = (totals.baseSums && typeof totals.baseSums[cur] !== 'undefined') ? totals.baseSums[cur] : 0
-                    const pnl = (totals.pnls && typeof totals.pnls[cur] !== 'undefined') ? totals.pnls[cur] : 0
-                    const pct = baseVal > 0 ? (pnl / baseVal) * 100 : 0
-                    const cls = pnl > 0 ? 'text-success' : (pnl < 0 ? 'text-danger' : 'text-body-secondary')
-                    return (
-                      <div key={cur} className="fw-semibold mb-2">
-                        <div className="text-body-secondary small">
-                          Alış değeri: {formatNumber(baseVal, cur)} {cur}
-                        </div>
-                        <div>
-                          {cur === '₺' ? <i className="bi bi-currency-lira me-1"></i> : (cur === 'EUR' ? <i className="bi bi-currency-euro me-1"></i> : <i className="bi bi-currency-dollar me-1"></i>)}
-                          Güncel değer: {formatNumber(currentVal, cur)} {cur}
-                        </div>
-                        
-                        <div className={`small ${cls}`}>
-                          Kazanç: {formatNumber(Math.abs(pnl), cur)} {cur} ({pnl >= 0 ? '+' : ''}{Number(pct).toFixed(2)}%)
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <div className="mt-2">
-                    <button
-                      className="btn btn-sm btn-outline-secondary"
-                      onClick={() => setShowConvertedTlByPlatform(prev => ({ ...prev, [pid]: !prev[pid] }))}
-                    >
-                      {showConvertedTlByPlatform[pid] ? 'TL toplamını gizle' : 'TL toplamını göster'}
-                    </button>
-                    {showConvertedTlByPlatform[pid] && (
-                      <div className="fw-semibold mt-2">
-                        <i className="bi bi-currency-lira me-1"></i>
-                        {formatNumber(convertPlatformToTRY(pid), '₺')} ₺
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        })}
       </div>
+      <HomePlatformCards
+        banks={banks}
+        platformTotals={platformTotals}
+        showConvertedTlByPlatform={showConvertedTlByPlatform}
+        setShowConvertedTlByPlatform={setShowConvertedTlByPlatform}
+        formatNumber={formatNumber}
+        convertPlatformToTRY={convertPlatformToTRY}
+      />
+      <HomeStarredPortfolios
+        portfolios={portfolios}
+        transactionsByPortfolio={transactionsByPortfolio}
+        symbolsData={symbolsData}
+        expandedStarred={expandedStarred}
+        setExpandedStarred={setExpandedStarred}
+        getDesiredPriceNum={getDesiredPriceNum}
+        formatNumber={formatNumber}
+      />
+      
+      <HomeAllHoldings
+        allHoldings={allHoldings}
+        symbolsData={symbolsData}
+        formatNumber={formatNumber}
+      />
+
     </div>
   );
 };
