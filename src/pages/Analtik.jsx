@@ -34,9 +34,9 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
   }
   const fmt = (num, cur) => {
     const isTry = cur === 'TRY' || cur === '₺'
-    const locale = isTry ? 'tr-TR' : 'en-US'
+    const locale = 'tr-TR'
     try {
-      return new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(num) || 0)
+      return new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: isTry }).format(Number(num) || 0)
     } catch (_) { return String(Number(num) || 0) }
   }
 
@@ -138,6 +138,7 @@ const Analtik = () => {
   const [currencyMap, setCurrencyMap] = useState(new Map())
   const [fxMap, setFxMap] = useState({ usdTry: 0 })
   const [banks, setBanks] = useState([])
+  const [symbolsData, setSymbolsData] = useState([])
 
   useEffect(() => {
     const q = query(collection(db, 'portfolios'), orderBy('createdAt', 'desc'))
@@ -145,7 +146,13 @@ const Analtik = () => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       setPortfolios(data)
     })
-    return () => { try { unsub() } catch {} }
+    const unsubSymbols = onSnapshot(collection(db, 'symbols'), (snap) => {
+      try {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        setSymbolsData(data)
+      } catch (_) { setSymbolsData([]) }
+    })
+    return () => { try { unsub() } catch {}; try { unsubSymbols() } catch {} }
   }, [])
 
   // Banka listesi (platform adlarını çözümlemek için)
@@ -156,6 +163,45 @@ const Analtik = () => {
     })
     return () => { try { unsub() } catch {} }
   }, [])
+
+  const desiredTransformString = (rawValue, desiredSample, cur) => {
+    if (!desiredSample) return null
+    const desired = (desiredSample || '').toString()
+    const desiredDigits = (desired.match(/\d/g) || []).length
+    if (desiredDigits <= 0) return null
+    const sepChar = ','
+    const firstDot = desired.indexOf('.')
+    const firstComma = desired.indexOf(',')
+    const idxSep = (firstDot >= 0 || firstComma >= 0) ? (firstDot >= 0 ? firstDot : firstComma) : -1
+    const digitsBeforeSep = idxSep >= 0 ? (desired.slice(0, idxSep).match(/\d/g) || []).length : desiredDigits
+    const rawDigitsOnly = (String(rawValue).match(/\d/g) || []).join('')
+    if (!rawDigitsOnly) return null
+    let take = rawDigitsOnly
+    if (take.length > desiredDigits) take = take.slice(0, desiredDigits)
+    if (take.length < desiredDigits) take = take.padEnd(desiredDigits, '0')
+    const intPart = take.slice(0, Math.max(0, Math.min(digitsBeforeSep, take.length)))
+    const fracPart = take.slice(Math.max(0, Math.min(digitsBeforeSep, take.length)))
+    const formatted = fracPart.length > 0 ? `${intPart}${sepChar}${fracPart}` : intPart
+    const c = (cur || '').toUpperCase()
+    if (c === 'TRY' || c === '₺') return `${formatted}₺`
+    if (c === 'USD') return `${formatted}$`
+    if (c === 'EUR') return `${formatted}€`
+    return formatted
+  }
+
+  const getDesiredPriceNum = (symbolIdUpper) => {
+    try {
+      const raw = priceMap.get ? priceMap.get(symbolIdUpper) : undefined
+      if (raw == null || raw === '') return 0
+      const symCfg = symbolsData.find(s => (s.id || '').toUpperCase() === symbolIdUpper)
+      const cur = (currencyMap.get ? currencyMap.get(symbolIdUpper) : '') || ''
+      if (symCfg && symCfg.desiredSample) {
+        const t = desiredTransformString(raw, symCfg.desiredSample, cur)
+        if (t != null) return parseNumber(t)
+      }
+      return parseNumber(raw)
+    } catch (_) { return 0 }
+  }
 
   useEffect(() => {
     if (!portfolios || portfolios.length === 0) {
@@ -244,8 +290,8 @@ const Analtik = () => {
       let remainingCost = 0
       const buys = []
       sorted.forEach((tx) => {
-        const adet = parseNumber(tx.adet)
-        const maaliyet = parseNumber(tx.maaliyet)
+        const adet = Number(parseNumber(tx.adet) || 0)
+        const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
         const birimFiyat = adet > 0 ? (maaliyet / (adet || 1)) : 0
         if (tx.durum === 'Alış') {
           buys.push({ adet, birimFiyat })
@@ -270,12 +316,12 @@ const Analtik = () => {
         const priceRaw = priceMap.get ? priceMap.get(symbolIdUpper) : undefined
         const curRaw = currencyMap.get ? currencyMap.get(symbolIdUpper) : undefined
         const currency = (curRaw === 'TRY' || curRaw === '₺') ? '₺' : (curRaw || '')
-        const priceNum = parseNumber(priceRaw)
-        const currentValue = priceNum > 0 ? priceNum * remainingAdet : 0
+        const priceNum = Number(getDesiredPriceNum(symbolIdUpper) || 0)
+        const currentValue = priceNum > 0 ? priceNum * Number(remainingAdet || 0) : 0
         const key = `${market}__${currency || 'N/A'}`
         const bucket = marketAgg[key] || { label: market, currency: currency || '', value: 0, cost: 0 }
-        bucket.value += currentValue
-        bucket.cost += remainingCost
+        bucket.value = Number(bucket.value || 0) + Number(currentValue || 0)
+        bucket.cost = Number(bucket.cost || 0) + Number(remainingCost || 0)
         marketAgg[key] = bucket
       }
     })
@@ -356,13 +402,13 @@ const Analtik = () => {
           const priceRaw = priceMap.get ? priceMap.get(symbolIdUpper) : undefined
           const curRaw = currencyMap.get ? currencyMap.get(symbolIdUpper) : undefined
           const currency = (curRaw === 'TRY' || curRaw === '₺') ? '₺' : (curRaw || '')
-          const priceNum = parseNumber(priceRaw)
-          const currentValue = priceNum > 0 ? priceNum * remainingAdet : 0
+        const priceNum = Number(getDesiredPriceNum(symbolIdUpper) || 0)
+        const currentValue = priceNum > 0 ? priceNum * Number(remainingAdet || 0) : 0
           const labelBase = bankNameById(platformId)
           const key = `${labelBase}__${currency || 'N/A'}`
-          const bucket = platformAgg[key] || { label: labelBase, currency: currency || '', value: 0, cost: 0 }
-          bucket.value += currentValue
-          bucket.cost += remainingCost
+        const bucket = platformAgg[key] || { label: labelBase, currency: currency || '', value: 0, cost: 0 }
+        bucket.value = Number(bucket.value || 0) + Number(currentValue || 0)
+        bucket.cost = Number(bucket.cost || 0) + Number(remainingCost || 0)
           platformAgg[key] = bucket
         }
       })

@@ -11,6 +11,7 @@ const Anasayfa = () => {
   const [priceBySymbol, setPriceBySymbol] = useState(new Map())
   const [currencyBySymbol, setCurrencyBySymbol] = useState(new Map())
   const [showConvertedTlByPlatform, setShowConvertedTlByPlatform] = useState({})
+  const [symbolsData, setSymbolsData] = useState([])
 
   useEffect(() => {
     const unsubBanks = onSnapshot(collection(db, 'banks'), (snapshot) => {
@@ -22,9 +23,16 @@ const Anasayfa = () => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
       setPortfolios(data)
     })
+    const unsubSymbols = onSnapshot(collection(db, 'symbols'), (snap) => {
+      try {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        setSymbolsData(data)
+      } catch (_) { setSymbolsData([]) }
+    })
     return () => {
       try { unsubBanks() } catch {}
       try { unsubPortfolios() } catch {}
+      try { unsubSymbols() } catch {}
     }
   }, [])
 
@@ -95,13 +103,52 @@ const Anasayfa = () => {
   const formatNumber = (value, currency) => {
     const num = typeof value === 'number' ? value : parseNumber(value)
     const isTry = currency === 'TRY' || currency === '₺'
-    const locale = isTry ? 'tr-TR' : 'en-US'
+    const locale = 'tr-TR'
     try {
-      const options = { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+      const options = { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: isTry }
       return new Intl.NumberFormat(locale, options).format(isNaN(num) ? 0 : num)
     } catch (_) {
       return String(isNaN(num) ? 0 : num)
     }
+  }
+
+  const desiredTransformString = (rawValue, desiredSample, cur) => {
+    if (!desiredSample) return null
+    const desired = (desiredSample || '').toString()
+    const desiredDigits = (desired.match(/\d/g) || []).length
+    if (desiredDigits <= 0) return null
+    const sepChar = ','
+    const firstDot = desired.indexOf('.')
+    const firstComma = desired.indexOf(',')
+    const idxSep = (firstDot >= 0 || firstComma >= 0) ? (firstDot >= 0 ? firstDot : firstComma) : -1
+    const digitsBeforeSep = idxSep >= 0 ? (desired.slice(0, idxSep).match(/\d/g) || []).length : desiredDigits
+    const rawDigitsOnly = (String(rawValue).match(/\d/g) || []).join('')
+    if (!rawDigitsOnly) return null
+    let take = rawDigitsOnly
+    if (take.length > desiredDigits) take = take.slice(0, desiredDigits)
+    if (take.length < desiredDigits) take = take.padEnd(desiredDigits, '0')
+    const intPart = take.slice(0, Math.max(0, Math.min(digitsBeforeSep, take.length)))
+    const fracPart = take.slice(Math.max(0, Math.min(digitsBeforeSep, take.length)))
+    const formatted = fracPart.length > 0 ? `${intPart}${sepChar}${fracPart}` : intPart
+    const c = (cur || '').toUpperCase()
+    if (c === 'TRY' || c === '₺') return `${formatted}₺`
+    if (c === 'USD') return `${formatted}$`
+    if (c === 'EUR') return `${formatted}€`
+    return formatted
+  }
+
+  const getDesiredPriceNum = (symbolIdUpper) => {
+    try {
+      const raw = priceBySymbol.get ? priceBySymbol.get(symbolIdUpper) : undefined
+      if (raw == null || raw === '') return 0
+      const symCfg = symbolsData.find(s => (s.id || '').toUpperCase() === symbolIdUpper)
+      const cur = (currencyBySymbol.get ? currencyBySymbol.get(symbolIdUpper) : '') || ''
+      if (symCfg && symCfg.desiredSample) {
+        const t = desiredTransformString(raw, symCfg.desiredSample, cur)
+        if (t != null) return parseNumber(t)
+      }
+      return parseNumber(raw)
+    } catch (_) { return 0 }
   }
 
   const platformTotals = useMemo(() => {
@@ -130,8 +177,8 @@ const Anasayfa = () => {
       let remainingMaaliyet = 0
       const buys = []
       sorted.forEach(tx => {
-        const adet = parseNumber(tx.adet) || 0
-        const maaliyet = parseNumber(tx.maaliyet) || 0
+        const adet = Number(parseNumber(tx.adet) || 0)
+        const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
         const birimFiyat = adet > 0 ? (maaliyet / adet) : 0
         if ((tx.durum || '') === 'Alış') {
           buys.push({ adet, birimFiyat })
@@ -152,14 +199,15 @@ const Anasayfa = () => {
           remainingMaaliyet -= sellCost
         }
       })
-      return { remainingAdet, remainingMaaliyet }
+      return { remainingAdet: Number(remainingAdet || 0), remainingMaaliyet: Number(remainingMaaliyet || 0) }
     }
 
     const result = {}
     Object.keys(byPlatformSymbol).forEach((platformId) => {
       const symbols = byPlatformSymbol[platformId]
       let countOpen = 0
-      const sums = {}
+      const baseSums = {}
+      const currentSums = {}
       const pnls = {}
       Object.keys(symbols).forEach((symbolId) => {
         const list = symbols[symbolId]
@@ -167,17 +215,17 @@ const Anasayfa = () => {
         const fifo = calcFifoForList(list)
         if (fifo.remainingAdet > 0) {
           countOpen += 1
-          sums[currency] = (sums[currency] || 0) + fifo.remainingMaaliyet
+          baseSums[currency] = Number(baseSums[currency] || 0) + Number(fifo.remainingMaaliyet || 0)
           // Unrealized P/L using current sheet price
           const symKey = (symbolId || '').toString().toUpperCase()
-          const currentRaw = priceBySymbol.get(symKey)
-          const currentNum = parseNumber(currentRaw)
-          const currentValue = currentNum > 0 ? fifo.remainingAdet * currentNum : 0
-          const pnl = currentValue > 0 ? (currentValue - fifo.remainingMaaliyet) : 0
-          pnls[currency] = (pnls[currency] || 0) + pnl
+          const currentNum = Number(getDesiredPriceNum(symKey) || 0)
+          const currentValue = currentNum > 0 ? Number(fifo.remainingAdet || 0) * currentNum : 0
+          currentSums[currency] = Number(currentSums[currency] || 0) + Number(currentValue || 0)
+          const pnl = currentValue - Number(fifo.remainingMaaliyet || 0)
+          pnls[currency] = Number(pnls[currency] || 0) + Number(pnl || 0)
         }
       })
-      result[platformId] = { count: countOpen, sums, pnls }
+      result[platformId] = { count: countOpen, baseSums, currentSums, pnls }
     })
     return result
   }, [transactionsByPortfolio, priceBySymbol])
@@ -229,7 +277,11 @@ const Anasayfa = () => {
         )}
         {platformIds.map((pid) => {
           const totals = platformTotals[pid]
-          const currencyKeys = Object.keys(totals.sums)
+          const currencyKeys = Array.from(new Set([
+            ...Object.keys(totals.baseSums || {}),
+            ...Object.keys(totals.currentSums || {}),
+            ...Object.keys(totals.pnls || {}),
+          ]))
           return (
             <div key={pid} className="card shadow-sm border-0">
               <div className="card-body d-flex align-items-center justify-content-between">
@@ -249,28 +301,28 @@ const Anasayfa = () => {
                 </div>
                 <div className="text-end">
                   <div className="text-body-secondary small mb-1">{totals.count} açık sembol</div>
-                  {currencyKeys.map((cur) => (
-                    <div key={cur} className="fw-semibold">
-                      {cur === 'USD' ? (
-                        <>
-                          {formatNumber(totals.sums[cur], cur)} <i className="bi bi-currency-dollar ms-1"></i>
-                        </>
-                      ) : (
-                        <>
+                  {currencyKeys.map((cur) => {
+                    const currentVal = (totals.currentSums && typeof totals.currentSums[cur] !== 'undefined') ? totals.currentSums[cur] : 0
+                    const baseVal = (totals.baseSums && typeof totals.baseSums[cur] !== 'undefined') ? totals.baseSums[cur] : 0
+                    const pnl = (totals.pnls && typeof totals.pnls[cur] !== 'undefined') ? totals.pnls[cur] : 0
+                    const pct = baseVal > 0 ? (pnl / baseVal) * 100 : 0
+                    const cls = pnl > 0 ? 'text-success' : (pnl < 0 ? 'text-danger' : 'text-body-secondary')
+                    return (
+                      <div key={cur} className="fw-semibold mb-2">
+                        <div className="text-body-secondary small">
+                          Alış değeri: {formatNumber(baseVal, cur)} {cur}
+                        </div>
+                        <div>
                           {cur === '₺' ? <i className="bi bi-currency-lira me-1"></i> : (cur === 'EUR' ? <i className="bi bi-currency-euro me-1"></i> : <i className="bi bi-currency-dollar me-1"></i>)}
-                          {formatNumber(totals.sums[cur], cur)} {cur}
-                        </>
-                      )}
-                      {(() => {
-                        const pnl = (totals.pnls && typeof totals.pnls[cur] !== 'undefined') ? totals.pnls[cur] : 0
-                        if (!pnl) return null
-                        const cls = pnl > 0 ? 'text-success' : 'text-danger'
-                        return (
-                          <div className={`small ${cls}`}>Kar/Zarar: {formatNumber(Math.abs(pnl), cur)} {cur}</div>
-                        )
-                      })()}
-                    </div>
-                  ))}
+                          Güncel değer: {formatNumber(currentVal, cur)} {cur}
+                        </div>
+                        
+                        <div className={`small ${cls}`}>
+                          Kazanç: {formatNumber(Math.abs(pnl), cur)} {cur} ({pnl >= 0 ? '+' : ''}{Number(pct).toFixed(2)}%)
+                        </div>
+                      </div>
+                    )
+                  })}
                   <div className="mt-2">
                     <button
                       className="btn btn-sm btn-outline-secondary"

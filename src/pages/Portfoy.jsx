@@ -124,9 +124,11 @@ const Portfoy = ({ onBack }) => {
         const desired = (desiredSample || '').toString()
         const desiredDigits = (desired.match(/\d/g) || []).length
         if (desiredDigits <= 0) return rawValue
-        const sepMatch = desired.match(/[.,]/)
-        const sepChar = sepMatch ? sepMatch[0] : ','
-        const idxSep = sepMatch ? desired.indexOf(sepChar) : -1
+        // Always use comma as decimal separator for display
+        const sepChar = ','
+        const firstDot = desired.indexOf('.')
+        const firstComma = desired.indexOf(',')
+        const idxSep = (firstDot >= 0 || firstComma >= 0) ? (firstDot >= 0 ? firstDot : firstComma) : -1
         const digitsBeforeSep = idxSep >= 0 ? (desired.slice(0, idxSep).match(/\d/g) || []).length : desiredDigits
         const rawDigitsOnly = (String(rawValue).match(/\d/g) || []).join('')
         if (!rawDigitsOnly) return rawValue
@@ -261,41 +263,28 @@ const Portfoy = ({ onBack }) => {
         // fiyat with desiredSample if available
         const priceRaw = iFiyat >= 0 ? cols[iFiyat] : ''
         const symbolRec = symbolsData.find(s => (s.name || s.id) === (sembol || '') || s.id === (sembol || '').toUpperCase())
-        let fiyat = 0
-        if (symbolRec && symbolRec.desiredSample) {
-          const transformed = desiredTransformString(priceRaw, symbolRec.desiredSample, '')
-          if (transformed) fiyat = parseDecimalNumber(transformed)
-        }
-        if (!fiyat) fiyat = parseDecimalNumber(priceRaw)
-        const komisyon = parseDecimalNumber(iKomisyon >= 0 ? cols[iKomisyon] : '')
+        // Raw string values without currency symbols
+        const fiyatRawStr = stripCurrencySymbols(priceRaw)
+        const komisyonRawStr = stripCurrencySymbols(iKomisyon >= 0 ? (cols[iKomisyon] || '') : '')
         const birim = ((iBirim >= 0 ? cols[iBirim] : '') || '').toString().trim()
-        const maaliyetVal = parseDecimalNumber(iMaaliyet >= 0 ? cols[iMaaliyet] : '')
+        const maaliyetRawStr = stripCurrencySymbols(iMaaliyet >= 0 ? (cols[iMaaliyet] || '') : '')
         const aciklamaVal = ((iAciklama >= 0 ? cols[iAciklama] : '') || '').toString().trim()
         const tarih = ((iTarih >= 0 ? cols[iTarih] : '') || '').toString().trim()
         const birimFormatted = formatBirim(birim)
-        // TRY için 2 ondalığa zorlamadan, desiredSample varsa onu uygula; yoksa ham metni sakla
-        let fiyatOut = fiyat
-        let komisyonOut = komisyon
-        if (birimFormatted === '₺') {
-          if (symbolRec && symbolRec.desiredSample) {
-            const transformedStr = desiredTransformString(priceRaw, symbolRec.desiredSample, '')
-            if (transformedStr) fiyatOut = transformedStr
-          } else {
-            fiyatOut = stripCurrencySymbols(priceRaw)
-          }
-          komisyonOut = stripCurrencySymbols(iKomisyon >= 0 ? (cols[iKomisyon] || '') : '')
-        }
+        // Always keep raw strings (without symbols) as imported
+        const fiyatOut = fiyatRawStr
+        const komisyonOut = komisyonRawStr
         const out = {
           platform: getBankIdByName((platform || '').toString().trim()),
           sembolBorsa: (sembolBorsa || '').toString().trim(),
           sembol: getSymbolIdByName((sembol || '').toString().trim()),
           durum: durum || 'Alış',
           adet: adet,
-          fiyat: (birimFormatted === '₺') ? fiyatOut : fiyat,
-          komisyon: (birimFormatted === '₺') ? komisyonOut : komisyon,
+          fiyat: fiyatOut,
+          komisyon: komisyonOut,
           stopaj: 0,
           birim: birimFormatted,
-          maaliyet: maaliyetVal,
+          maaliyet: maaliyetRawStr,
           aciklama: aciklamaVal,
           tarih: formatDate(tarih)
         }
@@ -445,15 +434,37 @@ const Portfoy = ({ onBack }) => {
     return Number((adetNum * fiyatNum + komisyonNum).toFixed(2))
   }
 
+  const formatDecimalCommaNoGrouping = (value) => {
+    if (value == null || value === '') return ''
+    const asStr = String(value)
+    if (asStr.includes(',')) return asStr
+    const num = parseNumber(value)
+    if (isNaN(num)) return asStr
+    try {
+      return new Intl.NumberFormat('tr-TR', { useGrouping: false, maximumFractionDigits: 6 }).format(num)
+    } catch (_) {
+      return asStr
+    }
+  }
+
+  const formatMaaliyetForStorage = (value, unit) => {
+    try {
+      const isTry = unit === 'TRY' || unit === '₺'
+      return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: isTry }).format(Number(value) || 0)
+    } catch (_) {
+      return value
+    }
+  }
+
   const formatNumber = (value, currency) => {
     const num = typeof value === 'number' ? value : parseNumber(value)
     const isTry = currency === 'TRY' || currency === '₺'
-    const locale = isTry ? 'tr-TR' : 'en-US'
+    const locale = 'tr-TR'
     try {
       const hasCurrency = !!currency
       const options = hasCurrency 
-        ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-        : { maximumFractionDigits: 6 }
+        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: isTry }
+        : { maximumFractionDigits: 6, useGrouping: isTry }
       return new Intl.NumberFormat(locale, options).format(isNaN(num) ? 0 : num)
     } catch (_) {
       return String(isNaN(num) ? 0 : num)
@@ -549,14 +560,93 @@ const Portfoy = ({ onBack }) => {
     }
   }
 
+  const getPortfolioSummary = (portfolioId) => {
+    try {
+      const txs = transactionsByPortfolio[portfolioId] || []
+      if (!Array.isArray(txs) || txs.length === 0) return null
+      const bySymbol = txs.reduce((acc, tx) => {
+        const key = tx.sembol || '—'
+        acc[key] = acc[key] || []
+        acc[key].push(tx)
+        return acc
+      }, {})
+      const sums = { base: { '₺': 0, 'USD': 0 }, current: { '₺': 0, 'USD': 0 } }
+      Object.keys(bySymbol).forEach((symbolKey) => {
+        const list = bySymbol[symbolKey]
+        // FIFO
+        const sortedTx = [...list].sort((a, b) => {
+          const dateA = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
+          const dateB = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
+          return dateA - dateB
+        })
+        let remainingAdet = 0
+        let remainingMaaliyet = 0
+        const buys = []
+        sortedTx.forEach((tx) => {
+          const adet = parseNumber(tx.adet) || 0
+          const maaliyet = parseNumber(tx.maaliyet) || 0
+          const birimFiyat = adet > 0 ? maaliyet / adet : 0
+          if ((tx.durum || '') === 'Alış') {
+            buys.push({ adet, birimFiyat })
+            remainingAdet += adet
+            remainingMaaliyet += maaliyet
+          } else if ((tx.durum || '') === 'Satış') {
+            let sellLeft = adet
+            let sellCost = 0
+            while (sellLeft > 0 && buys.length > 0) {
+              const b = buys[0]
+              const use = Math.min(sellLeft, b.adet)
+              sellCost += use * b.birimFiyat
+              b.adet -= use
+              sellLeft -= use
+              if (b.adet <= 0) buys.shift()
+            }
+            remainingAdet -= adet
+            remainingMaaliyet -= sellCost
+          }
+        })
+        if (remainingAdet <= 0) return
+        const symbolUpper = (symbolKey || '').toString().toUpperCase()
+        const cur = (list[0]?.birim === 'TRY' || list[0]?.birim === '₺') ? '₺' : (list[0]?.birim || '')
+        const priceRaw = sheetPrices[symbolUpper]
+        const priceNum = parseNumber(priceRaw)
+        const currentValue = priceNum > 0 ? priceNum * remainingAdet : 0
+        if (cur === '₺' || cur === 'USD') {
+          sums.base[cur] = (sums.base[cur] || 0) + remainingMaaliyet
+          sums.current[cur] = (sums.current[cur] || 0) + currentValue
+        }
+      })
+      const pct = {
+        '₺': (sums.base['₺'] > 0) ? ((sums.current['₺'] - sums.base['₺']) / sums.base['₺']) * 100 : 0,
+        'USD': (sums.base['USD'] > 0) ? ((sums.current['USD'] - sums.base['USD']) / sums.base['USD']) * 100 : 0
+      }
+      return { base: sums.base, current: sums.current, pct }
+    } catch (_) { return null }
+  }
+
+  const formatForInputComma = (value) => {
+    if (value == null) return ''
+    const str = String(value)
+    if (str.includes(',')) return str
+    const num = parseNumber(value)
+    if (isNaN(num)) return str
+    try {
+      return new Intl.NumberFormat('tr-TR', { useGrouping: false, maximumFractionDigits: 6 }).format(num)
+    } catch (_) {
+      return str
+    }
+  }
+
   const desiredTransformString = (rawValue, desiredSample, cur) => {
     if (!desiredSample) return null
     const desired = (desiredSample || '').toString()
     const desiredDigits = (desired.match(/\d/g) || []).length
     if (desiredDigits <= 0) return null
-    const sepMatch = desired.match(/[.,]/)
-    const sepChar = sepMatch ? sepMatch[0] : ','
-    const idxSep = sepMatch ? desired.indexOf(sepChar) : -1
+    // Always use comma as decimal separator for display
+    const sepChar = ','
+    const firstDot = desired.indexOf('.')
+    const firstComma = desired.indexOf(',')
+    const idxSep = (firstDot >= 0 || firstComma >= 0) ? (firstDot >= 0 ? firstDot : firstComma) : -1
     const digitsBeforeSep = idxSep >= 0 ? (desired.slice(0, idxSep).match(/\d/g) || []).length : desiredDigits
     const rawDigitsOnly = (String(rawValue).match(/\d/g) || []).join('')
     if (!rawDigitsOnly) return null
@@ -600,25 +690,14 @@ const Portfoy = ({ onBack }) => {
       const marketNorm = (sembolBorsa || '').toString().trim().toUpperCase()
       if (marketNorm === '-' || marketNorm === 'DÖVİZ' || marketNorm === 'DOVIZ') return null
       const adet = parseNumber(columns[4]) || 0
-      const parseDecimalNumber = (value) => {
-        if (!value) return 0
-        let cleanValue = value.toString().replace(/[₺$€]/g, '')
-        cleanValue = cleanValue.replace(/\./g, '').replace(/,/g, '.')
-        const num = parseFloat(cleanValue)
-        return isNaN(num) ? 0 : num
-      }
+      const stripSymbols = (value) => (value == null ? '' : value.toString().replace(/[₺$€]/g, '').trim())
       // fiyat - try desiredSample transform if available
       const priceRaw = columns[5]
       const symbolRec = symbolsData.find(s => (s.name || s.id) === (sembol || '') || s.id === (sembol || '').toUpperCase())
-      let fiyatNum = 0
-      if (symbolRec && symbolRec.desiredSample) {
-        const transformed = desiredTransformString(priceRaw, symbolRec.desiredSample, columns[7])
-        if (transformed) fiyatNum = parseDecimalNumber(transformed)
-      }
-      if (!fiyatNum) fiyatNum = parseDecimalNumber(priceRaw)
-      const komisyonNum = parseDecimalNumber(columns[6])
+      const fiyatStr = stripSymbols(priceRaw)
+      const komisyonStr = stripSymbols(columns[6])
       const birim = columns[7]?.trim() || ''
-      const maaliyet = parseDecimalNumber(columns[8])
+      const maaliyetStr = stripSymbols(columns[8])
       const aciklama = columns[9]?.trim() || ''
       const tarih = columns[10]?.trim() || ''
       const formatDate = (dateStr) => {
@@ -648,11 +727,11 @@ const Portfoy = ({ onBack }) => {
         sembol: getSymbolIdByName(sembol),
         durum: durum,
         adet: adet,
-        fiyat: (birimFormatted === '₺') ? formatTryNumber(fiyatNum) : fiyatNum,
-        komisyon: (birimFormatted === '₺') ? formatTryNumber(komisyonNum) : komisyonNum,
+        fiyat: fiyatStr,
+        komisyon: komisyonStr,
         stopaj: 0,
         birim: birimFormatted,
-        maaliyet: maaliyet,
+        maaliyet: maaliyetStr,
         aciklama: aciklama,
         tarih: formatDate(tarih)
       }
@@ -741,11 +820,11 @@ const Portfoy = ({ onBack }) => {
           sembol: getSymbolIdByName(trimmedSymbol), // Sembol ID'sine çevir
           durum: formData.durum || 'Alış',
           adet: adetNum,
-          fiyat: unit === 'TRY' ? formData.fiyat : fiyatNum,
-          komisyon: unit === 'TRY' ? formData.komisyon : komisyonNum,
+          fiyat: formatDecimalCommaNoGrouping((unit === 'TRY' || unit === '₺') ? formData.fiyat : fiyatNum),
+          komisyon: formatDecimalCommaNoGrouping((unit === 'TRY' || unit === '₺') ? formData.komisyon : komisyonNum),
           stopaj: stopajNum,
           birim: unitToSave,
-          maaliyet: maaliyetNum,
+          maaliyet: formatMaaliyetForStorage(maaliyetNum, unit),
           aciklama: formData.aciklama || '',
           tarih: dateValue
         })
@@ -757,11 +836,11 @@ const Portfoy = ({ onBack }) => {
           sembol: getSymbolIdByName(trimmedSymbol), // Sembol ID'sine çevir
           durum: formData.durum || 'Alış',
           adet: adetNum,
-          fiyat: unit === 'TRY' ? formData.fiyat : fiyatNum,
-          komisyon: unit === 'TRY' ? formData.komisyon : komisyonNum,
+          fiyat: formatDecimalCommaNoGrouping((unit === 'TRY' || unit === '₺') ? formData.fiyat : fiyatNum),
+          komisyon: formatDecimalCommaNoGrouping((unit === 'TRY' || unit === '₺') ? formData.komisyon : komisyonNum),
           stopaj: stopajNum,
           birim: unitToSave,
-          maaliyet: maaliyetNum,
+          maaliyet: formatMaaliyetForStorage(maaliyetNum, unit),
           aciklama: formData.aciklama || '',
           tarih: dateValue,
           createdAt: serverTimestamp()
@@ -872,10 +951,37 @@ const Portfoy = ({ onBack }) => {
                   <i className="bi bi-folder2" style={{ fontSize: '1.2rem' }}></i>
                 </div>
                 <div className="d-flex flex-column">
-                  <span className="fw-semibold">
-                    {p.name || 'Adsız portföy'} {p.starred ? <i className="bi bi-star-fill text-warning ms-1"></i> : null}
+                  <span className="fw-semibold d-flex align-items-center gap-2">
+                    <span>{p.name || 'Adsız portföy'}</span> {p.starred ? <i className="bi bi-star-fill text-warning"></i> : null}
+                    {(() => {
+                      try {
+                        const txs = transactionsByPortfolio[p.id] || []
+                        const totalStopajTry = txs
+                          .filter(tx => (tx.durum || '').toLowerCase() === 'stopaj kesintisi' && (tx.birim === 'TRY' || tx.birim === '₺'))
+                          .reduce((sum, tx) => sum + (parseNumber(tx.maaliyet) || 0), 0)
+                        if (!totalStopajTry) return null
+                        return (
+                          <span className="badge bg-light text-dark border small">Stopaj: {formatNumber(totalStopajTry, '₺')} ₺</span>
+                        )
+                      } catch (_) { return null }
+                    })()}
                   </span>
-                  <small className="text-body-secondary">{p.createdAt?.toDate?.().toLocaleString?.() || ''}</small>
+                  <small className="text-body-secondary d-block">{p.createdAt?.toDate?.().toLocaleString?.() || ''}</small>
+                  {(() => {
+                    const s = getPortfolioSummary(p.id)
+                    if (!s) return null
+                    return (
+                      <div className="small">
+                        <div>
+                        ₺ Güncel: {formatNumber(s.current['₺'] || 0, '₺')}  {s.base['₺'] > 0 ? <span className={((s.current['₺'] - s.base['₺']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['₺'] - s.base['₺']) / s.base['₺']) * 100).toFixed(2)}%)</span> : null}
+                        </div>
+                        <div>
+                          $
+                          Güncel: {formatNumber(s.current['USD'] || 0, 'USD')}  {s.base['USD'] > 0 ? <span className={((s.current['USD'] - s.base['USD']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['USD'] - s.base['USD']) / s.base['USD']) * 100).toFixed(2)}%)</span> : null}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
               <div className="d-flex gap-2">
@@ -1209,8 +1315,8 @@ const Portfoy = ({ onBack }) => {
                                             sembol: getSymbolNameById(tx.sembol) || '', // Sembol adını göster
                                             durum: tx.durum || 'Alış',
                                             adet: tx.adet || 0,
-                                            fiyat: tx.fiyat || 0,
-                                            komisyon: tx.komisyon || 0,
+                                            fiyat: formatForInputComma(tx.fiyat),
+                                            komisyon: formatForInputComma(tx.komisyon),
                                             stopaj: tx.stopaj || 0,
                                             birim: (tx.birim === 'TRY' || tx.birim === '₺') ? '₺' : (tx.birim || ''),
                                             maaliyet: tx.maaliyet || 0,
