@@ -60,6 +60,13 @@ const Portfoy = ({ onBack }) => {
   const [showSortSheet, setShowSortSheet] = useState(false)
   const [sortOption, setSortOption] = useState('symbol_asc') // 'symbol_asc' | 'symbol_desc' | 'date_asc' | 'date_desc' | 'quantity_asc' | 'quantity_desc'
   const [sheetPrices, setSheetPrices] = useState({})
+  
+  // Hisse seçimi ve kopyalama/taşıma için state'ler
+  const [selectedHoldings, setSelectedHoldings] = useState({}) // {portfolioId: {symbol: true/false}}
+  const [showCopyMoveModal, setShowCopyMoveModal] = useState(false)
+  const [copyMoveMode, setCopyMoveMode] = useState('copy') // 'copy' veya 'move'
+  const [targetPortfolio, setTargetPortfolio] = useState(null)
+  const [isSelectMode, setIsSelectMode] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'banks'), (snapshot) => {
@@ -947,6 +954,86 @@ const Portfoy = ({ onBack }) => {
     }
   }
 
+  // Hisse seçimi fonksiyonları
+  const toggleHoldingSelection = (portfolioId, symbol) => {
+    setSelectedHoldings(prev => ({
+      ...prev,
+      [portfolioId]: {
+        ...(prev[portfolioId] || {}),
+        [symbol]: !(prev[portfolioId]?.[symbol] || false)
+      }
+    }))
+  }
+
+  const isHoldingSelected = (portfolioId, symbol) => {
+    return selectedHoldings[portfolioId]?.[symbol] || false
+  }
+
+  const getSelectedHoldingsCount = () => {
+    return Object.values(selectedHoldings).reduce((total, portfolio) => {
+      return total + Object.values(portfolio).filter(Boolean).length
+    }, 0)
+  }
+
+  const clearAllSelections = () => {
+    setSelectedHoldings({})
+    setIsSelectMode(false)
+  }
+
+  // Kopyalama/taşıma fonksiyonları
+  const handleCopyMoveHoldings = async () => {
+    if (!targetPortfolio) return
+
+    const selectedHoldingsList = []
+    Object.entries(selectedHoldings).forEach(([portfolioId, symbols]) => {
+      Object.entries(symbols).forEach(([symbol, isSelected]) => {
+        if (isSelected) {
+          const portfolio = portfolios.find(p => p.id === portfolioId)
+          if (portfolio && transactionsByPortfolio[portfolioId]) {
+            const symbolTransactions = transactionsByPortfolio[portfolioId].filter(tx => tx.sembol === symbol)
+            selectedHoldingsList.push({
+              portfolioId,
+              symbol,
+              transactions: symbolTransactions
+            })
+          }
+        }
+      })
+    })
+
+    if (selectedHoldingsList.length === 0) return
+
+    try {
+      for (const { transactions } of selectedHoldingsList) {
+        for (const tx of transactions) {
+          await addDoc(collection(db, 'portfolios', targetPortfolio.id, 'transactions'), {
+            ...tx,
+            createdAt: serverTimestamp()
+          })
+        }
+      }
+
+      // Eğer taşıma modundaysa, orijinal portföyden sil
+      if (copyMoveMode === 'move') {
+        for (const { portfolioId, transactions } of selectedHoldingsList) {
+          for (const tx of transactions) {
+            await deleteDoc(doc(db, 'portfolios', portfolioId, 'transactions', tx.id))
+          }
+        }
+      }
+
+      const action = copyMoveMode === 'copy' ? 'kopyalandı' : 'taşındı'
+      try { window.alert(`${selectedHoldingsList.length} hisse ${action}.`) } catch {}
+      
+      // Temizle
+      clearAllSelections()
+      setShowCopyMoveModal(false)
+      setTargetPortfolio(null)
+    } catch (e) {
+      try { window.alert('İşlem sırasında bir hata oluştu.') } catch {}
+    }
+  }
+
   return (
     <div className="container-fluid py-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
@@ -1005,6 +1092,15 @@ const Portfoy = ({ onBack }) => {
             <i className="bi bi-arrow-down-up"></i>
           </button>
           <button 
+            className="btn btn-outline-info rounded-circle"
+            style={{ width: '40px', height: '40px' }}
+            onClick={() => setIsSelectMode(true)}
+            aria-label="Hisse seç"
+            title="Hisse seç"
+          >
+            <i className="bi bi-arrow-left-right"></i>
+          </button>
+          <button 
             className="btn btn-outline-primary rounded-circle"
             style={{ width: '40px', height: '40px' }}
             onClick={() => setShowCreatePortfolio(true)}
@@ -1014,6 +1110,46 @@ const Portfoy = ({ onBack }) => {
           </button>
         </div>
       </div>
+
+      {/* Seçim modu butonları */}
+      {isSelectMode && (
+        <div className="alert alert-info d-flex align-items-center justify-content-between mb-4">
+          <div className="d-flex align-items-center gap-3">
+            <i className="bi bi-info-circle"></i>
+            <span>
+              <strong>{getSelectedHoldingsCount()}</strong> hisse seçildi
+            </span>
+          </div>
+          <div className="d-flex gap-2">
+            <button 
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => {
+                setCopyMoveMode('copy')
+                setShowCopyMoveModal(true)
+              }}
+              disabled={getSelectedHoldingsCount() === 0}
+            >
+              <i className="bi bi-copy me-1"></i>Kopyala
+            </button>
+            <button 
+              className="btn btn-outline-warning btn-sm"
+              onClick={() => {
+                setCopyMoveMode('move')
+                setShowCopyMoveModal(true)
+              }}
+              disabled={getSelectedHoldingsCount() === 0}
+            >
+              <i className="bi bi-arrow-right me-1"></i>Taşı
+            </button>
+            <button 
+              className="btn btn-outline-secondary btn-sm"
+              onClick={clearAllSelections}
+            >
+              <i className="bi bi-x me-1"></i>İptal
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Portfolio list */}
       <div className="d-flex flex-column gap-2 mb-4">
@@ -1286,12 +1422,28 @@ const Portfoy = ({ onBack }) => {
                     return (
                       <div key={symbol} className="list-group-item p-0">
                         <div className="d-flex align-items-center justify-content-between px-3 py-2" role="button" onClick={() => {
-                          setExpandedGroups(prev => ({
-                            ...prev,
-                            [p.id]: { ...(prev[p.id] || {}), [symbol]: !isOpen }
-                          }))
+                          if (!isSelectMode) {
+                            setExpandedGroups(prev => ({
+                              ...prev,
+                              [p.id]: { ...(prev[p.id] || {}), [symbol]: !isOpen }
+                            }))
+                          }
                         }}>
                           <div className="d-flex  gap-2 align-items-start">
+                            {isSelectMode && (
+                              <div className="d-flex align-items-center">
+                                <input
+                                  type="checkbox"
+                                  className="form-check-input me-2"
+                                  checked={isHoldingSelected(p.id, symbol)}
+                                  onChange={(e) => {
+                                    e.stopPropagation()
+                                    toggleHoldingSelection(p.id, symbol)
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </div>
+                            )}
                             <i className={`bi ${isOpen ? 'bi-caret-down' : 'bi-caret-right'}`}></i>
                             <div className="d-flex align-items-start gap-2">
                               <div className="avatar">
@@ -1317,6 +1469,9 @@ const Portfoy = ({ onBack }) => {
                                 const val = sheetPrices[(symbol || '').toUpperCase()]
                                 return val ? val : '—'
                               })()} {birim}
+                              <span className="small text-body-secondary ms-2">
+                                  ({formatNumber(fifoTotals.adet)} adet)
+                                </span>
                               </span>
                               </span>
                             </div>
@@ -1327,7 +1482,8 @@ const Portfoy = ({ onBack }) => {
                             
                             {currentValue !== null && (
                               <div className="small mt-1">
-                                Güncel değer: {formatNumber(currentValue, birim)} {birim}
+                                Güncel değer: {formatNumber(currentValue, birim)} {birim} 
+                                
                               </div>
                             )}
                             {unrealizedPnL !== null && (
@@ -1454,7 +1610,11 @@ const Portfoy = ({ onBack }) => {
                                           if (!ok) return
                                           try {
                                             await deleteDoc(doc(db, 'portfolios', p.id, 'transactions', tx.id))
-                                          } catch (_) {}
+                                            try { window.alert('İşlem silindi.') } catch {}
+                                          } catch (e) {
+                                            console.error('Silme hatası:', e)
+                                            try { window.alert('İşlem silinirken hata oluştu.') } catch {}
+                                          }
                                         }}
                                       >
                                         <i className="bi bi-trash"></i>
@@ -1778,7 +1938,7 @@ const Portfoy = ({ onBack }) => {
                 </div>
                 <div className="col-12 col-md-6">
                   <label className="form-label">Adet</label>
-                  <input type="number" step="any" className="form-control" value={formData.adet} onChange={(e) => handleChange('adet', e.target.value)} />
+                  <input type="text" inputMode="decimal" className="form-control" value={formData.adet} onChange={(e) => handleChange('adet', e.target.value)} placeholder="Örn: 2293,1" />
                 </div>
                 <div className="col-12 col-md-6">
                   <label className="form-label">Fiyat</label>
@@ -2258,6 +2418,103 @@ const Portfoy = ({ onBack }) => {
                   />
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Portföy seçimi modal */}
+      {showCopyMoveModal && (
+        <div 
+          className="modal-backdrop" 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'var(--sheet-backdrop)',
+            zIndex: 1050,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          onClick={() => setShowCopyMoveModal(false)}
+        >
+          <div 
+            className="modal-content" 
+            style={{
+              backgroundColor: 'var(--sheet-bg)',
+              color: 'var(--text)',
+              width: '100%',
+              maxWidth: '500px',
+              borderRadius: '20px',
+              padding: '20px',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              boxShadow: 'var(--sheet-shadow)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <h5 className="mb-0">
+                <i className={`bi ${copyMoveMode === 'copy' ? 'bi-copy' : 'bi-arrow-right'} me-2`}></i>
+                {copyMoveMode === 'copy' ? 'Hisse Kopyala' : 'Hisse Taşı'}
+              </h5>
+              <button 
+                className="btn btn-outline-secondary btn-sm" 
+                onClick={() => setShowCopyMoveModal(false)}
+              >
+                <i className="bi bi-x"></i>
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-body-secondary mb-3">
+                <strong>{getSelectedHoldingsCount()}</strong> hisse seçildi. 
+                {copyMoveMode === 'copy' ? ' Kopyalanacak' : ' Taşınacak'} portföyü seçin:
+              </p>
+              
+              <div className="list-group">
+                {portfolios.map(portfolio => (
+                  <div 
+                    key={portfolio.id}
+                    className={`list-group-item list-group-item-action ${targetPortfolio?.id === portfolio.id ? 'active' : ''}`}
+                    onClick={() => setTargetPortfolio(portfolio)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="d-flex align-items-center">
+                      <div className="me-3">
+                        <i className={`bi ${targetPortfolio?.id === portfolio.id ? 'bi-check-circle-fill' : 'bi-circle'}`}></i>
+                      </div>
+                      <div>
+                        <h6 className="mb-1">{portfolio.name}</h6>
+                        <small className="text-body-secondary">
+                          {portfolio.title && `${portfolio.title} • `}
+                          {transactionsByPortfolio[portfolio.id]?.length || 0} işlem
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="d-flex gap-2 justify-content-end">
+              <button 
+                className="btn btn-outline-secondary" 
+                onClick={() => setShowCopyMoveModal(false)}
+              >
+                İptal
+              </button>
+              <button 
+                className={`btn ${copyMoveMode === 'copy' ? 'btn-primary' : 'btn-warning'}`}
+                onClick={handleCopyMoveHoldings}
+                disabled={!targetPortfolio}
+              >
+                <i className={`bi ${copyMoveMode === 'copy' ? 'bi-copy' : 'bi-arrow-right'} me-1`}></i>
+                {copyMoveMode === 'copy' ? 'Kopyala' : 'Taşı'}
+              </button>
             </div>
           </div>
         </div>

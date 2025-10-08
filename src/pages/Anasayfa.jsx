@@ -111,7 +111,10 @@ const Anasayfa = () => {
     const num = typeof value === 'number' ? value : parseNumber(value)
     const locale = 'tr-TR'
     try {
-      const options = { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
+      const hasCurrency = !!currency
+      const options = hasCurrency 
+        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
+        : { maximumFractionDigits: 6, useGrouping: true }
       return new Intl.NumberFormat(locale, options).format(isNaN(num) ? 0 : num)
     } catch (_) {
       return String(isNaN(num) ? 0 : num)
