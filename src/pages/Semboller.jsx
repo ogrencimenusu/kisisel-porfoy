@@ -339,27 +339,14 @@ const Semboller = ({ onBack }) => {
       const loadingState = {}
       symbols.forEach(s => { loadingState[s.id] = true })
       setLoadingPrices(prev => ({ ...prev, ...loadingState }))
-      const globalUrl = (() => { try { return localStorage.getItem('globalSheetUrl') || '' } catch { return '' } })()
-      if (!globalUrl) {
-        // fallback: do nothing
-        return
-      }
-      // Convert Google link to CSV export if needed
-      let exportUrl = globalUrl.trim()
-      if (/docs.google.com\/spreadsheets\//.test(exportUrl) && !/\?format=csv/.test(exportUrl)) {
-        const idMatch = exportUrl.match(/\/d\/([A-Za-z0-9-_]+)/)
-        if (idMatch) exportUrl = `https://docs.google.com/spreadsheets/d/${idMatch[1]}/export?format=csv`
-      }
-      const res = await fetch(exportUrl)
-      const text = await res.text()
-      const rows = text.split(/\r?\n/)
       const { priceBySymbol, currencyBySymbol } = await fetchPriceMapsFromGlobalSheet()
       // Update all listed symbols
       const newPrices = {}
       const newCurrencies = {}
       symbols.forEach(s => {
-        const val = priceBySymbol.get((s.id || '').toUpperCase())
-        const cur = currencyBySymbol.get((s.id || '').toUpperCase())
+        const key = (s.id || '').toUpperCase()
+        const val = priceBySymbol.get(key)
+        const cur = currencyBySymbol.get(key)
         if (typeof val !== 'undefined') newPrices[s.id] = val
         if (typeof cur !== 'undefined') newCurrencies[s.id] = cur
       })
@@ -369,16 +356,13 @@ const Semboller = ({ onBack }) => {
         const desired = (cfg.desiredSample || '').toString()
         const desiredDigits = (desired.match(/\d/g) || []).length
         if (desiredDigits <= 0) return rawValue
-        // Detect decimal separator and how many digits before it in desired sample
         const sepMatch = desired.match(/[.,]/)
         const sepChar = sepMatch ? sepMatch[0] : ','
         const idxSep = sepMatch ? desired.indexOf(sepChar) : -1
         const digitsBeforeSep = idxSep >= 0 ? (desired.slice(0, idxSep).match(/\d/g) || []).length : desiredDigits
-        // Extract digits from raw value
         const rawDigitsOnly = (String(rawValue).match(/\d/g) || []).join('')
         if (!rawDigitsOnly) return rawValue
         let take = rawDigitsOnly
-        // Keep LEFTMOST desiredDigits (remove from right). If shorter, pad with trailing zeros
         if (take.length > desiredDigits) take = take.slice(0, desiredDigits)
         if (take.length < desiredDigits) take = take.padEnd(desiredDigits, '0')
         const intPart = take.slice(0, Math.max(0, Math.min(digitsBeforeSep, take.length)))

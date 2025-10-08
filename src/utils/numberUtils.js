@@ -12,10 +12,9 @@ export const parseNumberSafe = (val) => {
 
 export const formatNumberByCurrency = (value, currency) => {
   const num = typeof value === 'number' ? value : parseNumberSafe(value)
-  const isTry = currency === 'TRY' || currency === '₺'
   const locale = 'tr-TR'
   try {
-    return new Intl.NumberFormat(locale, { maximumFractionDigits: 6, useGrouping: isTry }).format(isNaN(num) ? 0 : num)
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 6, useGrouping: true }).format(isNaN(num) ? 0 : num)
   } catch (_) {
     return String(isNaN(num) ? 0 : num)
   }

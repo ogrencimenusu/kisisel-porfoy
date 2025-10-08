@@ -106,10 +106,9 @@ const Anasayfa = () => {
 
   const formatNumber = (value, currency) => {
     const num = typeof value === 'number' ? value : parseNumber(value)
-    const isTry = currency === 'TRY' || currency === '₺'
     const locale = 'tr-TR'
     try {
-      const options = { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: isTry }
+      const options = { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
       return new Intl.NumberFormat(locale, options).format(isNaN(num) ? 0 : num)
     } catch (_) {
       return String(isNaN(num) ? 0 : num)
@@ -237,14 +236,12 @@ const Anasayfa = () => {
   const convertPlatformToTRY = (pid) => {
     const totals = platformTotals[pid]
     if (!totals) return 0
-    const sums = totals.sums || {}
     const toNum = (s) => parseNumber((s || '').toString())
     const usdRate = toNum(tlPrices.USD)
-    const tlBase = sums['₺'] || 0
-    const usdAmount = (sums['USD'] || 0)
-    const usdPnl = (totals.pnls && totals.pnls['USD']) ? totals.pnls['USD'] : 0
-    const usdCurrent = (usdAmount + usdPnl) * (usdRate || 0)
-    return tlBase + usdCurrent
+    const tlCurrent = (totals.currentSums && typeof totals.currentSums['₺'] !== 'undefined') ? Number(totals.currentSums['₺']) : 0
+    const usdCurrent = (totals.currentSums && typeof totals.currentSums['USD'] !== 'undefined') ? Number(totals.currentSums['USD']) : 0
+    const convertedUsd = usdRate > 0 ? usdCurrent * usdRate : 0
+    return tlCurrent + convertedUsd
   }
 
   const getPlatformName = (platformId) => {
@@ -351,6 +348,7 @@ const Anasayfa = () => {
         setExpandedStarred={setExpandedStarred}
         getDesiredPriceNum={getDesiredPriceNum}
         formatNumber={formatNumber}
+        usdRate={parseNumber(tlPrices.USD)}
       />
       
       <HomeAllHoldings

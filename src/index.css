@@ -303,7 +303,7 @@ body.dark-theme .btn-outline-danger {
     font-weight: bold;
 }
 .anasayfa-portfoy .portfoy-wrap .price {
-  height: 170px;
+  height: 200px;
   display: flex
 ;
   flex-direction: column;
@@ -315,6 +315,9 @@ body.dark-theme .btn-outline-danger {
 .anasayfa-portfoy .portfoy-wrap .price .price-currency .alis { 
   font-size: 11px;
     margin-bottom: -7px;
+ }
+ .card-anasayfa .card-body {
+  display:none !important;
  }
 .anasayfa-portfoy .portfoy-wrap .price .price-currency .guncel {  }
 .anasayfa-portfoy .portfoy-wrap .price .price-kazanc { font-size: 10px;  }

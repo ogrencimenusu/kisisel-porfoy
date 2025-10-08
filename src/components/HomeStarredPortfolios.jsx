@@ -1,6 +1,6 @@
 import React from 'react'
 
-const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsData, expandedStarred, setExpandedStarred, getDesiredPriceNum, formatNumber }) => {
+const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsData, expandedStarred, setExpandedStarred, getDesiredPriceNum, formatNumber, usdRate = 0 }) => {
   const parseNumber = (val) => {
     if (typeof val === 'number') return isNaN(val) ? 0 : val
     if (!val) return 0
@@ -99,7 +99,7 @@ const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsDat
                 ...Object.keys(totalsByCur.base || {}),
                 ...Object.keys(totalsByCur.current || {})
               ]))
-              return curKeys.map(cur => {
+              const rows = curKeys.map(cur => {
                 const baseVal = totalsByCur.base[cur] || 0
                 const curVal = totalsByCur.current[cur] || 0
                 const gain = curVal - baseVal
@@ -123,6 +123,18 @@ const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsDat
                  
                 )
               })
+              // Toplam (₺)
+              try {
+                const tryCur = (totalsByCur.current['₺'] || totalsByCur.current['TRY'] || 0)
+                const usdCur = (totalsByCur.current['USD'] || 0)
+                const combinedTry = Number(tryCur || 0) + (usdRate > 0 ? Number(usdCur || 0) * Number(usdRate) : 0)
+                rows.push(
+                  <div key="combined-try" className="mt-1">
+                    Toplam (₺): {formatNumber(combinedTry, '₺')} ₺
+                  </div>
+                )
+              } catch (_) {}
+              return rows
             })()}
                     
           </div>
@@ -165,7 +177,7 @@ const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsDat
             return { base, current }
           })()
           return (
-            <div key={p.id} className="card shadow-sm border-0">
+            <div key={p.id} className="card card-anasayfa shadow-sm border-0">
               <div className="card-body d-flex align-items-center justify-content-between" role="button" onClick={() => setExpandedStarred(prev => ({ ...prev, [p.id]: !prev[p.id] }))}>
                 <div className="d-flex align-items-center gap-3">
                   <div className="d-flex flex-column">

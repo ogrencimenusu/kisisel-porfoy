@@ -27,6 +27,7 @@ const Portfoy = ({ onBack }) => {
     portfolioName: '',
     excelData: ''
   })
+  const [usdTryTlPrice, setUsdTryTlPrice] = useState(0)
   const defaultSymbols = [ ''
   ]
   const [userSymbols, setUserSymbols] = useState([])
@@ -85,6 +86,28 @@ const Portfoy = ({ onBack }) => {
         }
       } catch (_) {}
     })()
+  }, [])
+
+  useEffect(() => {
+    // Load USD/TRY from tl_price sheet
+    const load = async () => {
+      try {
+        const rows = await fetchRowsFromNamedTab('tl_price')
+        // Expect rows like: [ [USD, 41,6898], [EUR, 48,6068] ] possibly with or without header
+        const entries = rows.map(r => [(r[0] || '').toString().trim().toUpperCase(), (r[1] || '').toString().trim()])
+        const usdEntry = entries.find(([k]) => k === 'USD')
+        if (usdEntry) {
+          const val = usdEntry[1]
+          const num = parseNumber(val)
+          setUsdTryTlPrice(num > 0 ? num : 0)
+        } else {
+          setUsdTryTlPrice(0)
+        }
+      } catch (_) {
+        setUsdTryTlPrice(0)
+      }
+    }
+    load()
   }, [])
 
   useEffect(() => {
@@ -458,13 +481,12 @@ const Portfoy = ({ onBack }) => {
 
   const formatNumber = (value, currency) => {
     const num = typeof value === 'number' ? value : parseNumber(value)
-    const isTry = currency === 'TRY' || currency === '₺'
     const locale = 'tr-TR'
     try {
       const hasCurrency = !!currency
       const options = hasCurrency 
-        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: isTry }
-        : { maximumFractionDigits: 6, useGrouping: isTry }
+        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
+        : { maximumFractionDigits: 6, useGrouping: true }
       return new Intl.NumberFormat(locale, options).format(isNaN(num) ? 0 : num)
     } catch (_) {
       return String(isNaN(num) ? 0 : num)
@@ -739,45 +761,62 @@ const Portfoy = ({ onBack }) => {
   }
 
   const handleImportData = async () => {
-    const portfolioName = importData.portfolioName.trim()
-    const excelData = importData.excelData.trim()
-    
+    const portfolioName = (importData.portfolioName || '').trim()
+    const excelData = (importData.excelData || '').trim()
+
+    // Eğer belirli bir portföy seçiliyse sadece excel verisi yeterli
+    if (selectedPortfolio) {
+      if (!excelData) {
+        try { window.alert('Excel verisi gereklidir.') } catch {}
+        return
+      }
+      try {
+        const transactions = parseExcelData(excelData)
+        if (transactions.length === 0) {
+          try { window.alert('Geçerli veri bulunamadı. Lütfen Excel verilerini kontrol edin.') } catch {}
+          return
+        }
+        const transactionPromises = transactions.map(tx => 
+          addDoc(collection(db, 'portfolios', selectedPortfolio.id, 'transactions'), {
+            ...tx,
+            createdAt: serverTimestamp()
+          })
+        )
+        await Promise.all(transactionPromises)
+        setImportData({ portfolioName: '', excelData: '' })
+        setShowImportSheet(false)
+        try { window.alert(`${transactions.length} işlem mevcut portföye import edildi.`) } catch {}
+      } catch (e) {
+        try { window.alert('Import işlemi sırasında bir hata oluştu.') } catch {}
+      }
+      return
+    }
+
+    // Aksi halde yeni portföy oluşturup işlemleri ekle
     if (!portfolioName || !excelData) {
       try { window.alert('Portföy adı ve Excel verisi gereklidir.') } catch {}
       return
     }
-    
     try {
-      // Excel verilerini parse et
       const transactions = parseExcelData(excelData)
-      
       if (transactions.length === 0) {
         try { window.alert('Geçerli veri bulunamadı. Lütfen Excel verilerini kontrol edin.') } catch {}
         return
       }
-      
-      // Portföy oluştur
       const portfolioRef = await addDoc(collection(db, 'portfolios'), {
         name: portfolioName,
         createdAt: serverTimestamp()
       })
-      
-      // İşlemleri ekle
       const transactionPromises = transactions.map(tx => 
         addDoc(collection(db, 'portfolios', portfolioRef.id, 'transactions'), {
           ...tx,
           createdAt: serverTimestamp()
         })
       )
-      
       await Promise.all(transactionPromises)
-      
-      // Formu temizle ve sheet'i kapat
       setImportData({ portfolioName: '', excelData: '' })
       setShowImportSheet(false)
-      
       try { window.alert(`${transactions.length} işlem başarıyla import edildi.`) } catch {}
-      
     } catch (e) {
       try { window.alert('Import işlemi sırasında bir hata oluştu.') } catch {}
     }
@@ -979,6 +1018,38 @@ const Portfoy = ({ onBack }) => {
                           $
                           Güncel: {formatNumber(s.current['USD'] || 0, 'USD')}  {s.base['USD'] > 0 ? <span className={((s.current['USD'] - s.base['USD']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['USD'] - s.base['USD']) / s.base['USD']) * 100).toFixed(2)}%)</span> : null}
                         </div>
+                        {(() => {
+                          try {
+                            // Prefer tl_price USD if available
+                            let usdTry = parseNumber(usdTryTlPrice)
+                            if (!(usdTry > 0)) {
+                              const usdCandidates = [
+                                'USDTRY', 'USDTTRY', 'USD-TRY', 'USD/TRY', 'USD_TL', 'USD TL', 'DOLAR', 'DOLAR_TL'
+                              ]
+                              let usdTryRaw = null
+                              for (const key of usdCandidates) {
+                                const v = sheetPrices[key]
+                                if (typeof v !== 'undefined' && v !== null && String(v).trim() !== '') { usdTryRaw = v; break }
+                              }
+                              if (!usdTryRaw && typeof sheetPrices['TRYUSD'] !== 'undefined') {
+                                const tryUsd = parseNumber(sheetPrices['TRYUSD'])
+                                if (tryUsd > 0) usdTryRaw = 1 / tryUsd
+                              }
+                              usdTry = parseNumber(usdTryRaw)
+                            }
+                            const tlPart = Number(s.current['₺'] || 0)
+                            const usdPart = Number(s.current['USD'] || 0)
+                            const totalTl = tlPart + (usdTry > 0 ? (usdPart * usdTry) : 0)
+                            if (tlPart > 0 || (usdPart > 0 && usdTry > 0)) {
+                              return (
+                                <div>
+                                  Toplam (₺): {formatNumber(totalTl, '₺')}
+                                </div>
+                              )
+                            }
+                            return null
+                          } catch (_) { return null }
+                        })()}
                       </div>
                     )
                   })()}
@@ -992,6 +1063,15 @@ const Portfoy = ({ onBack }) => {
                   aria-label="Portföyü düzenle"
                 >
                   <i className="bi bi-pencil"></i>
+                </button>
+                <button
+                  className="btn btn-outline-success rounded-circle"
+                  style={{ width: '36px', height: '36px' }}
+                  onClick={() => { setSelectedPortfolio(p); setShowImportSheet(true) }}
+                  aria-label="Excel verilerini import et"
+                  title="Excel verilerini import et"
+                >
+                  <i className="bi bi-upload"></i>
                 </button>
                 <button
                   className="btn btn-outline-warning rounded-circle"
@@ -1754,7 +1834,7 @@ const Portfoy = ({ onBack }) => {
               }}
             >
               <h5 className="mb-0">
-                <i className="bi bi-upload me-2"></i>Excel Verilerini Import Et
+                <i className="bi bi-upload me-2"></i>Excel Verilerini Import Et{selectedPortfolio ? ` — ${selectedPortfolio.name}` : ''}
               </h5>
               <div className="d-flex gap-2">
                 <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowImportSheet(false)}>
@@ -1763,7 +1843,7 @@ const Portfoy = ({ onBack }) => {
                 <button 
                   className="btn btn-success btn-sm" 
                   onClick={handleImportData}
-                  disabled={!importData.portfolioName.trim() || !importData.excelData.trim()}
+                  disabled={selectedPortfolio ? !importData.excelData.trim() : (!importData.portfolioName.trim() || !importData.excelData.trim())}
                 >
                   Import Et
                 </button>
@@ -1772,17 +1852,19 @@ const Portfoy = ({ onBack }) => {
 
             <div className="modal-body">
               <div className="row g-3">
-                <div className="col-12">
-                  <label className="form-label">Portföy Adı</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={importData.portfolioName} 
-                    onChange={(e) => setImportData(prev => ({ ...prev, portfolioName: e.target.value }))} 
-                    placeholder="Örn: Import Edilen Portföy"
-                    autoFocus
-                  />
-                </div>
+                {!selectedPortfolio && (
+                  <div className="col-12">
+                    <label className="form-label">Portföy Adı</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      value={importData.portfolioName} 
+                      onChange={(e) => setImportData(prev => ({ ...prev, portfolioName: e.target.value }))} 
+                      placeholder="Örn: Import Edilen Portföy"
+                      autoFocus
+                    />
+                  </div>
+                )}
                 <div className="col-12">
                   <label className="form-label">Excel Verileri</label>
                   <textarea 

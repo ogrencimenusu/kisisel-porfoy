@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../firebase'
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
-import { fetchPriceMapsFromGlobalSheet } from '../services/sheetService'
+import { fetchPriceMapsFromGlobalSheet, fetchRowsFromNamedTab } from '../services/sheetService'
 
 // Basit, bağımsız SVG donut chart
 const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, usdTotal: 0 } }) => {
@@ -33,10 +33,9 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
     )
   }
   const fmt = (num, cur) => {
-    const isTry = cur === 'TRY' || cur === '₺'
     const locale = 'tr-TR'
     try {
-      return new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: isTry }).format(Number(num) || 0)
+      return new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }).format(Number(num) || 0)
     } catch (_) { return String(Number(num) || 0) }
   }
 
@@ -105,6 +104,11 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
         <text x={center} y={center + 12} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.75rem' }}>
           {fmt(totals.usdTotal, 'USD')} USD
         </text>
+        {typeof totals.combinedTry !== 'undefined' && totals.combinedTry !== null && (
+          <text x={center} y={center + 32} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.8rem' }}>
+            {fmt(totals.combinedTry, '₺')} ₺
+          </text>
+        )}
       </svg>
       {tooltip.visible && (
         <div
@@ -137,6 +141,7 @@ const Analtik = () => {
   const [priceMap, setPriceMap] = useState(new Map())
   const [currencyMap, setCurrencyMap] = useState(new Map())
   const [fxMap, setFxMap] = useState({ usdTry: 0 })
+  const [usdTryTlPrice, setUsdTryTlPrice] = useState(0)
   const [banks, setBanks] = useState([])
   const [symbolsData, setSymbolsData] = useState([])
 
@@ -267,6 +272,27 @@ const Analtik = () => {
 
   useEffect(() => { refreshPrices() }, [])
 
+  useEffect(() => {
+    // Fallback USD/TRY from tl_price sheet
+    const load = async () => {
+      try {
+        const rows = await fetchRowsFromNamedTab('tl_price')
+        const entries = rows.map(r => [(r[0] || '').toString().trim().toUpperCase(), (r[1] || '').toString().trim()])
+        const usdEntry = entries.find(([k]) => k === 'USD')
+        if (usdEntry) {
+          const val = usdEntry[1]
+          const num = parseNumber(val)
+          setUsdTryTlPrice(num > 0 ? num : 0)
+        } else {
+          setUsdTryTlPrice(0)
+        }
+      } catch (_) {
+        setUsdTryTlPrice(0)
+      }
+    }
+    load()
+  }, [])
+
   // Her sembol için kalan adet hesabı (FIFO) ve ilgili sembolBorsa'yı kullanır
   const donutData = useMemo(() => {
     const allTx = Object.values(transactionsByPortfolio).flat()
@@ -338,9 +364,15 @@ const Analtik = () => {
 
   const totals = useMemo(() => {
     const tryTotal = donutData.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
-    const usdTotal = donutData.filter(d => d.currency === 'USD').reduce((s, d) => s + d.value, 0)
-    return { tryTotal, usdTotal }
-  }, [donutData])
+    const usdLike = new Set(['USD', 'USDT'])
+    const usdTotal = donutData.filter(d => usdLike.has((d.currency || '').toUpperCase())).reduce((s, d) => s + d.value, 0)
+    let usdTry = Number(fxMap.usdTry || 0)
+    if (!(usdTry > 0)) {
+      usdTry = Number(usdTryTlPrice || 0)
+    }
+    const combinedTry = tryTotal + (usdTry > 0 ? usdTotal * usdTry : 0)
+    return { tryTotal, usdTotal, combinedTry }
+  }, [donutData, fxMap, usdTryTlPrice])
 
   // Platform bazlı dağılım (platform + para birimi), USD'ler TL'ye çevrilerek renklendirilir
   const platformDonutData = useMemo(() => {
@@ -427,9 +459,15 @@ const Analtik = () => {
 
   const platformTotals = useMemo(() => {
     const tryTotal = platformDonutData.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
-    const usdTotal = platformDonutData.filter(d => d.currency === 'USD').reduce((s, d) => s + d.value, 0)
-    return { tryTotal, usdTotal }
-  }, [platformDonutData])
+    const usdLike = new Set(['USD', 'USDT'])
+    const usdTotal = platformDonutData.filter(d => usdLike.has((d.currency || '').toUpperCase())).reduce((s, d) => s + d.value, 0)
+    let usdTry = Number(fxMap.usdTry || 0)
+    if (!(usdTry > 0)) {
+      usdTry = Number(usdTryTlPrice || 0)
+    }
+    const combinedTry = tryTotal + (usdTry > 0 ? usdTotal * usdTry : 0)
+    return { tryTotal, usdTotal, combinedTry }
+  }, [platformDonutData, fxMap, usdTryTlPrice])
 
   return (
     <div className="container-fluid py-4">
