@@ -16,6 +16,8 @@ const Anasayfa = () => {
   const [showConvertedTlByPlatform, setShowConvertedTlByPlatform] = useState({})
   const [symbolsData, setSymbolsData] = useState([])
   const [expandedStarred, setExpandedStarred] = useState({})
+  const [showBankHoldings, setShowBankHoldings] = useState(null)
+  const [expandedBankGroups, setExpandedBankGroups] = useState({})
 
   useEffect(() => {
     const unsubBanks = onSnapshot(collection(db, 'banks'), (snapshot) => {
@@ -339,6 +341,10 @@ const Anasayfa = () => {
         setShowConvertedTlByPlatform={setShowConvertedTlByPlatform}
         formatNumber={formatNumber}
         convertPlatformToTRY={convertPlatformToTRY}
+        transactionsByPortfolio={transactionsByPortfolio}
+        symbolsData={symbolsData}
+        getDesiredPriceNum={getDesiredPriceNum}
+        onShowBankHoldings={setShowBankHoldings}
       />
       <HomeStarredPortfolios
         portfolios={portfolios}
@@ -356,6 +362,235 @@ const Anasayfa = () => {
         symbolsData={symbolsData}
         formatNumber={formatNumber}
       />
+
+      {/* Bank Holdings Modal */}
+      {showBankHoldings && (
+        <div 
+          className="modal-backdrop" 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'var(--sheet-backdrop)',
+            zIndex: 1050,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center'
+          }}
+          onClick={() => setShowBankHoldings(null)}
+        >
+          <div 
+            className="modal-content" 
+            style={{
+              backgroundColor: 'var(--sheet-bg)',
+              color: 'var(--text)',
+              width: '100%',
+              maxWidth: '800px',
+              borderTopLeftRadius: '20px',
+              borderTopRightRadius: '20px',
+              padding: '20px',
+              paddingTop: '0',
+              maxHeight: '85vh',
+              overflowY: 'auto',
+              transform: 'translateY(0)',
+              transition: 'transform 0.3s ease-out',
+              boxShadow: 'var(--sheet-shadow)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div 
+              className="d-flex justify-content-between align-items-center mb-3"
+              style={{
+                position: 'sticky',
+                top: 0,
+                backgroundColor: 'var(--sheet-bg)',
+                zIndex: 2,
+                paddingTop: '10px',
+                paddingBottom: '8px',
+                marginBottom: '12px',
+                borderBottom: '1px solid var(--bs-border-color)'
+              }}
+            >
+              <h5 className="mb-0">
+                <i className="bi bi-building me-2"></i>
+                {(() => {
+                  const bank = banks.find(b => b.id === showBankHoldings)
+                  return bank ? bank.name : showBankHoldings
+                })()} - Açık Hisse Pozisyonları
+              </h5>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowBankHoldings(null)}>
+                Kapat
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {(() => {
+                const allTx = Object.values(transactionsByPortfolio).flat()
+                const bankTx = allTx.filter(tx => tx.platform === showBankHoldings)
+                
+                if (bankTx.length === 0) {
+                  return <div className="text-center text-body-secondary py-4">Bu bankada açık pozisyon yok.</div>
+                }
+
+                // Group by symbol
+                const grouped = bankTx.reduce((acc, tx) => {
+                  const key = tx.sembol || '—'
+                  acc[key] = acc[key] || []
+                  acc[key].push(tx)
+                  return acc
+                }, {})
+
+                // Calculate FIFO for each symbol
+                const calcFifoRemaining = (list) => {
+                  const sorted = [...list].sort((a, b) => {
+                    const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
+                    const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
+                    return da - db
+                  })
+                  let remainingAdet = 0
+                  let remainingMaaliyet = 0
+                  const buys = []
+                  sorted.forEach(tx => {
+                    const adet = Number(parseNumber(tx.adet) || 0)
+                    const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
+                    const birimFiyat = adet > 0 ? (maaliyet / adet) : 0
+                    if (tx.durum === 'Alış') {
+                      buys.push({ adet, birimFiyat })
+                      remainingAdet += adet
+                      remainingMaaliyet += maaliyet
+                    } else if (tx.durum === 'Satış') {
+                      let sellLeft = adet
+                      let sellCost = 0
+                      while (sellLeft > 0 && buys.length > 0) {
+                        const b = buys[0]
+                        const use = Math.min(sellLeft, b.adet)
+                        sellCost += use * b.birimFiyat
+                        b.adet -= use
+                        sellLeft -= use
+                        if (b.adet <= 0) buys.shift()
+                      }
+                      remainingAdet -= adet
+                      remainingMaaliyet -= sellCost
+                    }
+                  })
+                  return { remainingAdet: Number(remainingAdet || 0), remainingMaaliyet: Number(remainingMaaliyet || 0) }
+                }
+
+                const entries = Object.keys(grouped).map(symbol => {
+                  const list = grouped[symbol]
+                  const fifo = calcFifoRemaining(list)
+                  const birim = list[0]?.birim
+                  const symbolName = (() => {
+                    const symbol = symbolsData.find(s => s.id === symbol)
+                    return symbol ? (symbol.name || symbol.id) : symbol
+                  })()
+                  const currentPrice = getDesiredPriceNum((symbol || '').toString().toUpperCase())
+                  const currentValue = currentPrice > 0 ? currentPrice * fifo.remainingAdet : 0
+                  const unrealizedPnL = currentValue - fifo.remainingMaaliyet
+                  const unrealizedPnLPct = fifo.remainingMaaliyet > 0 ? (unrealizedPnL / fifo.remainingMaaliyet) * 100 : 0
+                  
+                  return { symbol, symbolName, list, fifo, birim, currentPrice, currentValue, unrealizedPnL, unrealizedPnLPct }
+                }).filter(e => e.fifo.remainingAdet > 0).sort((a, b) => a.symbolName.localeCompare(b.symbolName))
+
+                return (
+                  <div className="list-group list-group-flush">
+                    {entries.map(({ symbol, symbolName, list, fifo, birim, currentPrice, currentValue, unrealizedPnL, unrealizedPnLPct }) => {
+                      const isOpen = !!(expandedBankGroups[showBankHoldings] && expandedBankGroups[showBankHoldings][symbol])
+                      return (
+                        <div key={symbol} className="list-group-item p-0">
+                          <div className="d-flex align-items-center justify-content-between px-3 py-2" role="button" onClick={() => {
+                            setExpandedBankGroups(prev => ({
+                              ...prev,
+                              [showBankHoldings]: { ...(prev[showBankHoldings] || {}), [symbol]: !isOpen }
+                            }))
+                          }}>
+                            <div className="d-flex gap-2 align-items-start">
+                              <i className={`bi ${isOpen ? 'bi-caret-down' : 'bi-caret-right'}`}></i>
+                              <div className="d-flex align-items-start gap-2">
+                                <div className="avatar">
+                                  {(() => {
+                                    const symCfg = symbolsData.find(s => s.id === symbol)
+                                    const url = symCfg?.logoUrl
+                                    if (url) {
+                                      return (
+                                        <div className="avatar-img-container rounded-3 border border-secondary overflow-hidden">
+                                          <img src={url} alt={`${symCfg?.name || symCfg?.id || 'Sembol'} logosu`} className="avatar-img" />
+                                        </div>
+                                      )
+                                    }
+                                    return <i className="bi bi-tag" style={{ fontSize: '1.2rem' }}></i>
+                                  })()}
+                                </div>
+                                <span className="fw-semibold">
+                                  {symbolName}
+                                  <br />
+                                  <span className='' style={{fontSize: '0.8rem'}}>
+                                    {currentPrice ? formatNumber(currentPrice, birim) : '—'} {birim}
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-end">
+                              {currentValue > 0 && (
+                                <div className="small mt-1">
+                                  Güncel değer: {formatNumber(currentValue, birim)} {birim}
+                                </div>
+                              )}
+                              {unrealizedPnL !== 0 && (
+                                <div className={`small mt-1 ${unrealizedPnL > 0 ? 'text-success' : (unrealizedPnL < 0 ? 'text-danger' : 'text-body-secondary')}`} style={{fontSize: '0.6rem'}}>
+                                  {formatNumber(Math.abs(unrealizedPnL), birim)} {birim}
+                                  {unrealizedPnLPct !== 0 && (
+                                    <span> ({unrealizedPnL >= 0 ? '+' : ''}{Number(unrealizedPnLPct).toFixed(2)}%)</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {isOpen && (
+                            <div className="list-group list-group-flush">
+                              <div className='d-flex flex-row gap-1 p-1' style={{fontSize: '0.8rem'}}> 
+                                <span className="text-small d-block font-weight-normal">
+                                  Kalan Adet: {formatNumber(fifo.remainingAdet)} 
+                                </span>
+                                <span className="text-small d-block font-weight-normal">
+                                  - Kalan Maaliyet: {formatNumber(fifo.remainingMaaliyet, birim)} {birim}
+                                </span>
+                                <span className="text-small d-block font-weight-normal"> -  
+                                  Ort. Alım Fiyat: {formatNumber(fifo.remainingAdet > 0 ? fifo.remainingMaaliyet / fifo.remainingAdet : 0, birim)} {birim}
+                                </span>
+                              </div>
+                              {list.map((tx, index) => (
+                                <div key={`${tx.id}-${index}`} className="list-group-item bg-transparent d-flex align-items-center justify-content-between">
+                                  <div className="d-flex align-items-center justify-content-between w-100">
+                                    <div className="d-flex flex-column">
+                                      <span className="fw-semibold">{tx.durum} - <small className="text-body-secondary">
+                                        {formatNumber(tx.adet)} Adet, {formatNumber(tx.fiyat, tx.birim)} {tx.birim}
+                                      </small></span>
+                                      <div>Maaliyet: {formatNumber(tx.maaliyet, tx.birim)} {tx.birim}</div>
+                                    </div>
+                                    <div className="d-flex align-items-center gap-3">
+                                      <div className="text-end">
+                                        <div className="text-body-secondary">{(tx.tarih instanceof Date ? tx.tarih : (tx.tarih?.toDate?.() || null))?.toLocaleDateString?.() || ''}</div>
+                                        <small className="text-body-secondary">Komisyon: {formatNumber(tx.komisyon, tx.birim)}</small>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

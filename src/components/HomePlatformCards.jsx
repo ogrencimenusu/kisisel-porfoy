@@ -1,6 +1,6 @@
-import React from 'react'
+import React, { useState } from 'react'
 
-const HomePlatformCards = ({ banks, platformTotals, showConvertedTlByPlatform, setShowConvertedTlByPlatform, formatNumber, convertPlatformToTRY }) => {
+const HomePlatformCards = ({ banks, platformTotals, showConvertedTlByPlatform, setShowConvertedTlByPlatform, formatNumber, convertPlatformToTRY, transactionsByPortfolio, symbolsData, getDesiredPriceNum, onShowBankHoldings }) => {
   const platformIds = Object.keys(platformTotals || {})
 
   return (
@@ -41,7 +41,13 @@ const HomePlatformCards = ({ banks, platformTotals, showConvertedTlByPlatform, s
                 </div>
               )}
             </div>
-            <div className="card-aciksembol">{totals.count} açık sembol</div>
+            <div 
+              className="card-aciksembol" 
+              style={{ cursor: 'pointer' }}
+              onClick={() => onShowBankHoldings && onShowBankHoldings(pid)}
+            >
+              {totals.count} açık sembol
+            </div>
             {currencyKeys.map((cur) => {
               const currentVal = (totals.currentSums && typeof totals.currentSums[cur] !== 'undefined') ? totals.currentSums[cur] : 0
               const baseVal = (totals.baseSums && typeof totals.baseSums[cur] !== 'undefined') ? totals.baseSums[cur] : 0
