@@ -18,6 +18,7 @@ const Anasayfa = () => {
   const [expandedStarred, setExpandedStarred] = useState({})
   const [showBankHoldings, setShowBankHoldings] = useState(null)
   const [expandedBankGroups, setExpandedBankGroups] = useState({})
+  const [hideZeroBankHoldings, setHideZeroBankHoldings] = useState(false)
 
   useEffect(() => {
     const unsubBanks = onSnapshot(collection(db, 'banks'), (snapshot) => {
@@ -420,9 +421,20 @@ const Anasayfa = () => {
                   return bank ? bank.name : showBankHoldings
                 })()} - Açık Hisse Pozisyonları
               </h5>
-              <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowBankHoldings(null)}>
-                Kapat
-              </button>
+              <div className="d-flex gap-2">
+                <button 
+                  className="btn btn-outline-secondary rounded-circle"
+                  style={{ width: '32px', height: '32px' }}
+                  onClick={() => setHideZeroBankHoldings(prev => !prev)}
+                  aria-label="Sıfır adetlileri gizle/göster"
+                  title={hideZeroBankHoldings ? 'Sıfır adetlileri göster' : 'Sıfır adetlileri gizle'}
+                >
+                  <i className={`bi ${hideZeroBankHoldings ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                </button>
+                <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowBankHoldings(null)}>
+                  Kapat
+                </button>
+              </div>
             </div>
 
             <div className="modal-body">
@@ -478,21 +490,21 @@ const Anasayfa = () => {
                   return { remainingAdet: Number(remainingAdet || 0), remainingMaaliyet: Number(remainingMaaliyet || 0) }
                 }
 
-                const entries = Object.keys(grouped).map(symbol => {
-                  const list = grouped[symbol]
+                const entries = Object.keys(grouped).map(symbolKey => {
+                  const list = grouped[symbolKey]
                   const fifo = calcFifoRemaining(list)
                   const birim = list[0]?.birim
                   const symbolName = (() => {
-                    const symbol = symbolsData.find(s => s.id === symbol)
-                    return symbol ? (symbol.name || symbol.id) : symbol
+                    const symbol = symbolsData.find(s => s.id === symbolKey)
+                    return symbol ? (symbol.name || symbol.id) : symbolKey
                   })()
-                  const currentPrice = getDesiredPriceNum((symbol || '').toString().toUpperCase())
+                  const currentPrice = getDesiredPriceNum((symbolKey || '').toString().toUpperCase())
                   const currentValue = currentPrice > 0 ? currentPrice * fifo.remainingAdet : 0
                   const unrealizedPnL = currentValue - fifo.remainingMaaliyet
                   const unrealizedPnLPct = fifo.remainingMaaliyet > 0 ? (unrealizedPnL / fifo.remainingMaaliyet) * 100 : 0
                   
-                  return { symbol, symbolName, list, fifo, birim, currentPrice, currentValue, unrealizedPnL, unrealizedPnLPct }
-                }).filter(e => e.fifo.remainingAdet > 0).sort((a, b) => a.symbolName.localeCompare(b.symbolName))
+                  return { symbol: symbolKey, symbolName, list, fifo, birim, currentPrice, currentValue, unrealizedPnL, unrealizedPnLPct }
+                }).filter(e => hideZeroBankHoldings ? e.fifo.remainingAdet > 0 : true).sort((a, b) => a.symbolName.localeCompare(b.symbolName))
 
                 return (
                   <div className="list-group list-group-flush">
