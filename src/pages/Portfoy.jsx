@@ -23,7 +23,12 @@ const Portfoy = ({ onBack }) => {
     date: ''
   })
   const [showImportSheet, setShowImportSheet] = useState(false)
+  const [showMainImportSheet, setShowMainImportSheet] = useState(false)
   const [importData, setImportData] = useState({
+    portfolioName: '',
+    excelData: ''
+  })
+  const [mainImportData, setMainImportData] = useState({
     portfolioName: '',
     excelData: ''
   })
@@ -822,6 +827,39 @@ const Portfoy = ({ onBack }) => {
     }
   }
 
+  const handleMainImportData = async () => {
+    const portfolioName = (mainImportData.portfolioName || '').trim()
+    const excelData = (mainImportData.excelData || '').trim()
+
+    if (!portfolioName || !excelData) {
+      try { window.alert('Portföy adı ve Excel verisi gereklidir.') } catch {}
+      return
+    }
+    try {
+      const transactions = parseExcelData(excelData)
+      if (transactions.length === 0) {
+        try { window.alert('Geçerli veri bulunamadı. Lütfen Excel verilerini kontrol edin.') } catch {}
+        return
+      }
+      const portfolioRef = await addDoc(collection(db, 'portfolios'), {
+        name: portfolioName,
+        createdAt: serverTimestamp()
+      })
+      const transactionPromises = transactions.map(tx => 
+        addDoc(collection(db, 'portfolios', portfolioRef.id, 'transactions'), {
+          ...tx,
+          createdAt: serverTimestamp()
+        })
+      )
+      await Promise.all(transactionPromises)
+      setMainImportData({ portfolioName: '', excelData: '' })
+      setShowMainImportSheet(false)
+      try { window.alert(`${transactions.length} işlem başarıyla import edildi.`) } catch {}
+    } catch (e) {
+      try { window.alert('Import işlemi sırasında bir hata oluştu.') } catch {}
+    }
+  }
+
   const handleSaveTransaction = async () => {
     if (!selectedPortfolio) return
     const trimmedSymbol = (formData.sembol || '').trim().toUpperCase()
@@ -940,7 +978,7 @@ const Portfoy = ({ onBack }) => {
           <button 
             className="btn btn-outline-success rounded-circle"
             style={{ width: '40px', height: '40px' }}
-            onClick={() => setShowImportSheet(true)}
+            onClick={() => setShowMainImportSheet(true)}
             aria-label="Excel verilerini import et"
           >
             <i className="bi bi-upload"></i>
@@ -1776,6 +1814,108 @@ const Portfoy = ({ onBack }) => {
                 <div className="col-12 col-md-6">
                   <label className="form-label">Tarih</label>
                   <input type="date" className="form-control" value={formData.tarih} onChange={(e) => handleChange('tarih', e.target.value)} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Import sheet */}
+      {showMainImportSheet && (
+        <div 
+          className="modal-backdrop" 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'var(--sheet-backdrop)',
+            zIndex: 1050,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center'
+          }}
+          onClick={() => setShowMainImportSheet(false)}
+        >
+          <div 
+            className="modal-content" 
+            style={{
+              backgroundColor: 'var(--sheet-bg)',
+              color: 'var(--text)',
+              width: '100%',
+              maxWidth: '600px',
+              borderTopLeftRadius: '20px',
+              borderTopRightRadius: '20px',
+              padding: '20px',
+              paddingTop: '0',
+              maxHeight: '85vh',
+              overflowY: 'auto',
+              transform: 'translateY(0)',
+              transition: 'transform 0.3s ease-out',
+              boxShadow: 'var(--sheet-shadow)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div 
+              className="d-flex justify-content-between align-items-center mb-3"
+              style={{
+                position: 'sticky',
+                top: 0,
+                backgroundColor: 'var(--sheet-bg)',
+                zIndex: 2,
+                paddingTop: '10px',
+                paddingBottom: '8px',
+                marginBottom: '12px',
+                borderBottom: '1px solid var(--bs-border-color)'
+              }}
+            >
+              <h5 className="mb-0">
+                <i className="bi bi-upload me-2"></i>Excel Verilerini Import Et
+              </h5>
+              <div className="d-flex gap-2">
+                <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowMainImportSheet(false)}>
+                  İptal
+                </button>
+                <button 
+                  className="btn btn-success btn-sm" 
+                  onClick={handleMainImportData}
+                  disabled={!mainImportData.portfolioName.trim() || !mainImportData.excelData.trim()}
+                >
+                  Import Et
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-body">
+              <div className="row g-3">
+                <div className="col-12">
+                  <label className="form-label">Portföy Adı</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    value={mainImportData.portfolioName} 
+                    onChange={(e) => setMainImportData(prev => ({ ...prev, portfolioName: e.target.value }))} 
+                    placeholder="Örn: Import Edilen Portföy"
+                    autoFocus
+                  />
+                </div>
+                <div className="col-12">
+                  <label className="form-label">Excel Verileri</label>
+                  <textarea 
+                    className="form-control" 
+                    rows="8"
+                    value={mainImportData.excelData} 
+                    onChange={(e) => setMainImportData(prev => ({ ...prev, excelData: e.target.value }))} 
+                    placeholder="Excel'den kopyaladığınız verileri buraya yapıştırın..."
+                    style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
+                  />
+                  <div className="form-text">
+                    <strong>Beklenen format:</strong><br/>
+                    Platform	Sembol Borsa	Sembol	Durum	Adet	Fiyat	Komisyon	Birim	Maaliyet	Açıklama	Tarih<br/>
+                    İşbank	TEFAS	BGP	Satış	15084	4,574372₺	0,00₺	TRY	67.572,79₺	BGP TEFAS Yatırım Fonu Satışı	17.09.2025
+                  </div>
                 </div>
               </div>
             </div>
