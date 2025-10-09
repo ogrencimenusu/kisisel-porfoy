@@ -359,7 +359,8 @@ const Analtik = () => {
       .filter((agg) => (agg?.value || 0) > 0)
       .map((agg) => {
         const currency = agg.currency || ''
-        const chartValue = currency === 'USD' && fxMap.usdTry > 0 ? agg.value * fxMap.usdTry : agg.value
+        const usdRate = Number(usdTryTlPrice || 0) > 0 ? Number(usdTryTlPrice) : Number(fxMap.usdTry || 0)
+        const chartValue = (currency === 'USD' || currency === 'USDT') && usdRate > 0 ? agg.value * usdRate : agg.value
         return { label: `${agg.label}${currency ? ` (${currency})` : ''}`, value: agg.value, chartValue, cost: agg.cost, currency }
       })
       .sort((a, b) => b.value - a.value)
@@ -458,12 +459,13 @@ const Analtik = () => {
       .filter((agg) => (agg?.value || 0) > 0)
       .map((agg) => {
         const currency = agg.currency || ''
-        const chartValue = currency === 'USD' && fxMap.usdTry > 0 ? agg.value * fxMap.usdTry : agg.value
+        const usdRate = Number(usdTryTlPrice || 0) > 0 ? Number(usdTryTlPrice) : Number(fxMap.usdTry || 0)
+        const chartValue = (currency === 'USD' || currency === 'USDT') && usdRate > 0 ? agg.value * usdRate : agg.value
         return { label: `${agg.label}${currency ? ` (${currency})` : ''}`, value: agg.value, chartValue, cost: agg.cost, currency }
       })
       .sort((a, b) => b.chartValue - a.chartValue)
     return entries
-  }, [transactionsByPortfolio, banks, priceMap, currencyMap, fxMap, portfolios])
+  }, [transactionsByPortfolio, banks, priceMap, currencyMap, fxMap, usdTryTlPrice, portfolios])
 
   const platformTotals = useMemo(() => {
     const tryTotal = platformDonutData.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
@@ -476,6 +478,78 @@ const Analtik = () => {
     const combinedTry = tryTotal + (usdTry > 0 ? usdTotal * usdTry : 0)
     return { tryTotal, usdTotal, combinedTry }
   }, [platformDonutData, fxMap, usdTryTlPrice])
+
+  // Symbol-level donut: each symbol as a slice (currency-aware values)
+  const symbolDonutData = useMemo(() => {
+    const hiddenPortfolioIds = new Set((portfolios || []).filter(p => !!p.hideFromHomeAndAnalytics).map(p => p.id))
+    const allTx = Object.entries(transactionsByPortfolio)
+      .filter(([pid]) => !hiddenPortfolioIds.has(pid))
+      .map(([, list]) => list)
+      .flat()
+    if (allTx.length === 0) return []
+    const bySymbol = allTx.reduce((acc, tx) => {
+      const key = tx.sembol || '—'
+      acc[key] = acc[key] || []
+      acc[key].push(tx)
+      return acc
+    }, {})
+    const entries = []
+    Object.keys(bySymbol).forEach((symbolKey) => {
+      const txs = bySymbol[symbolKey]
+      const sorted = [...txs].sort((a, b) => {
+        const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
+        const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
+        return da - db
+      })
+      let remainingAdet = 0
+      let remainingCost = 0
+      const buys = []
+      sorted.forEach((tx) => {
+        const adet = Number(parseNumber(tx.adet) || 0)
+        const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
+        const birimFiyat = adet > 0 ? (maaliyet / (adet || 1)) : 0
+        if (tx.durum === 'Alış') {
+          buys.push({ adet, birimFiyat })
+          remainingAdet += adet
+          remainingCost += maaliyet
+        } else if (tx.durum === 'Satış') {
+          let sellQty = adet
+          while (sellQty > 0 && buys.length > 0) {
+            const lot = buys[0]
+            const useQty = Math.min(sellQty, lot.adet)
+            remainingCost -= useQty * lot.birimFiyat
+            lot.adet -= useQty
+            sellQty -= useQty
+            if (lot.adet <= 0) buys.shift()
+          }
+          remainingAdet -= adet
+        }
+      })
+      if (remainingAdet > 0) {
+        const symbolIdUpper = (symbolKey || '').toString().toUpperCase()
+        const curRaw = currencyMap.get ? currencyMap.get(symbolIdUpper) : undefined
+        const currency = (curRaw === 'TRY' || curRaw === '₺') ? '₺' : (curRaw || '')
+        const priceNum = Number(getDesiredPriceNum(symbolIdUpper) || 0)
+        const currentValue = priceNum > 0 ? priceNum * Number(remainingAdet || 0) : 0
+        const symCfg = symbolsData.find(s => (s.id || '').toUpperCase() === symbolIdUpper)
+        const label = symCfg ? (symCfg.name || symCfg.id) : symbolKey
+        const usdRate = Number(usdTryTlPrice || 0) > 0 ? Number(usdTryTlPrice) : Number(fxMap.usdTry || 0)
+        const chartValue = (currency === 'USD' || currency === 'USDT') && usdRate > 0 ? currentValue * usdRate : currentValue
+        entries.push({ label: `${label}${currency ? ` (${currency})` : ''}`, value: currentValue, chartValue, cost: remainingCost, currency })
+      }
+    })
+    return entries.sort((a, b) => b.chartValue - a.chartValue)
+  }, [transactionsByPortfolio, portfolios, currencyMap, fxMap, usdTryTlPrice, symbolsData])
+
+  const symbolTotals = useMemo(() => {
+    const tryTotal = symbolDonutData.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
+    const usdLike = new Set(['USD', 'USDT'])
+    const usdTotal = symbolDonutData.filter(d => usdLike.has((d.currency || '').toUpperCase())).reduce((s, d) => s + d.value, 0)
+    let usdTry = Number(fxMap.usdTry || 0)
+    if (!(usdTry > 0)) usdTry = Number(usdTryTlPrice || 0)
+    const combinedTry = tryTotal + (usdTry > 0 ? usdTotal * usdTry : 0)
+    return { tryTotal, usdTotal, combinedTry }
+  }, [symbolDonutData, fxMap, usdTryTlPrice])
 
   return (
     <div className="container-fluid py-4">
@@ -508,6 +582,18 @@ const Analtik = () => {
             </div>
           </div>
           <DonutChart data={platformDonutData} totals={platformTotals} />
+        </div>
+      </div>
+
+      <div className="card shadow-sm border-0 mt-4">
+        <div className="card-body">
+          <div className="d-flex align-items-center justify-content-between mb-3">
+            <div className="d-flex align-items-center gap-2">
+              <i className="bi bi-tags"></i>
+              <span className="fw-semibold">Hisse dağılımı</span>
+            </div>
+          </div>
+          <DonutChart data={symbolDonutData} totals={symbolTotals} />
         </div>
       </div>
     </div>

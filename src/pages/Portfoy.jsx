@@ -69,6 +69,7 @@ const Portfoy = ({ onBack }) => {
   const [copyMoveMode, setCopyMoveMode] = useState('copy') // 'copy' veya 'move'
   const [targetPortfolio, setTargetPortfolio] = useState(null)
   const [isSelectMode, setIsSelectMode] = useState(false)
+  const [draggingPortfolioId, setDraggingPortfolioId] = useState(null)
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'banks'), (snapshot) => {
@@ -340,7 +341,16 @@ const Portfoy = ({ onBack }) => {
     const q = query(collection(db, 'portfolios'), orderBy('createdAt', 'desc'))
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-      setPortfolios(data)
+      // Apply custom order if present
+      const sorted = [...data].sort((a, b) => {
+        const ao = typeof a.order === 'number' ? a.order : Number.POSITIVE_INFINITY
+        const bo = typeof b.order === 'number' ? b.order : Number.POSITIVE_INFINITY
+        if (ao !== bo) return ao - bo
+        const at = (a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0)
+        const bt = (b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0)
+        return bt - at
+      })
+      setPortfolios(sorted)
     })
     return () => {
       try { unsubscribe() } catch {}
@@ -378,12 +388,20 @@ const Portfoy = ({ onBack }) => {
     let dateVal = null
     try { dateVal = dateStr ? new Date(dateStr) : null } catch { dateVal = null }
     try {
+      const nextOrder = (() => {
+        try {
+          const nums = (portfolios || []).map(p => (typeof p.order === 'number' ? p.order : -1))
+          const max = nums.length > 0 ? Math.max(...nums) : -1
+          return (isFinite(max) ? max : -1) + 1
+        } catch { return 0 }
+      })()
       await addDoc(collection(db, 'portfolios'), {
         name,
         title,
         description,
         date: dateVal,
         hideFromHomeAndAnalytics: !!newPortfolioHideFromHomeAndAnalytics,
+        order: nextOrder,
         createdAt: serverTimestamp()
       })
       setNewPortfolioName('')
@@ -1011,7 +1029,7 @@ const Portfoy = ({ onBack }) => {
         for (const { portfolioId, transactions } of selectedHoldingsList) {
           for (const tx of transactions) {
             try {
-              await deleteDoc(doc(db, 'portfolios', portfolioId, 'transactions', tx.id))
+            await deleteDoc(doc(db, 'portfolios', portfolioId, 'transactions', tx.id))
               // Optimistic UI update
               setTransactionsByPortfolio(prev => ({
                 ...prev,
@@ -1034,6 +1052,32 @@ const Portfoy = ({ onBack }) => {
     } catch (e) {
       try { window.alert('İşlem sırasında bir hata oluştu.') } catch {}
     }
+  }
+
+  // Drag & drop reordering for portfolios
+  const onDragStartPortfolio = (e, id) => {
+    try { e.dataTransfer.effectAllowed = 'move' } catch {}
+    setDraggingPortfolioId(id)
+  }
+  const onDragOverPortfolio = (e, overId) => {
+    try { e.preventDefault(); e.dataTransfer.dropEffect = 'move' } catch { e.preventDefault() }
+  }
+  const onDropPortfolio = async (e, overId) => {
+    try { e.preventDefault() } catch {}
+    if (!draggingPortfolioId || draggingPortfolioId === overId) { setDraggingPortfolioId(null); return }
+    const fromIdx = portfolios.findIndex(p => p.id === draggingPortfolioId)
+    const toIdx = portfolios.findIndex(p => p.id === overId)
+    if (fromIdx < 0 || toIdx < 0) { setDraggingPortfolioId(null); return }
+    const next = [...portfolios]
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    setPortfolios(next)
+    // Persist order indexes atomically
+    try {
+      const updates = next.map((p, idx) => updateDoc(doc(db, 'portfolios', p.id), { order: idx }))
+      await Promise.all(updates)
+    } catch (_) {}
+    setDraggingPortfolioId(null)
   }
 
   return (
@@ -1156,7 +1200,14 @@ const Portfoy = ({ onBack }) => {
       {/* Portfolio list */}
       <div className="d-flex flex-column gap-2 mb-4">
         {portfolios.map((p) => (
-          <div key={p.id} className="card shadow-sm border-0">
+          <div 
+            key={p.id} 
+            className="card shadow-sm border-0"
+            draggable
+            onDragStart={(e) => onDragStartPortfolio(e, p.id)}
+            onDragOver={(e) => onDragOverPortfolio(e, p.id)}
+            onDrop={(e) => onDropPortfolio(e, p.id)}
+          >
             <div className="card-body d-flex align-items-center justify-content-between">
               <div className="d-flex align-items-center gap-3" role="button" onClick={() => {
                 setExpandedPortfolios(prev => ({ ...prev, [p.id]: !prev[p.id] }))

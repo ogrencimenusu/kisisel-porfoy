@@ -28,7 +28,15 @@ const Anasayfa = () => {
     const q = query(collection(db, 'portfolios'), orderBy('createdAt', 'desc'))
     const unsubPortfolios = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-      setPortfolios(data)
+      const sorted = [...data].sort((a, b) => {
+        const ao = typeof a.order === 'number' ? a.order : Number.POSITIVE_INFINITY
+        const bo = typeof b.order === 'number' ? b.order : Number.POSITIVE_INFINITY
+        if (ao !== bo) return ao - bo
+        const at = (a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0)
+        const bt = (b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0)
+        return bt - at
+      })
+      setPortfolios(sorted)
     })
     const unsubSymbols = onSnapshot(collection(db, 'symbols'), (snap) => {
       try {
