@@ -162,7 +162,11 @@ const Anasayfa = () => {
 
   const platformTotals = useMemo(() => {
     // Flatten all transactions
-    const allTx = Object.values(transactionsByPortfolio).flat()
+    const hiddenPortfolioIds = new Set((portfolios || []).filter(p => !!p.hideFromHomeAndAnalytics).map(p => p.id))
+    const allTx = Object.entries(transactionsByPortfolio)
+      .filter(([pid]) => !hiddenPortfolioIds.has(pid))
+      .map(([, list]) => list)
+      .flat()
     const byPlatformSymbol = {}
     // Group by platform -> symbol -> list of tx
     allTx.forEach((tx) => {
@@ -237,7 +241,7 @@ const Anasayfa = () => {
       result[platformId] = { count: countOpen, baseSums, currentSums, pnls }
     })
     return result
-  }, [transactionsByPortfolio, priceBySymbol])
+  }, [transactionsByPortfolio, priceBySymbol, portfolios])
 
   const convertPlatformToTRY = (pid) => {
     const totals = platformTotals[pid]
@@ -295,7 +299,11 @@ const Anasayfa = () => {
 
   const allHoldings = useMemo(() => {
     try {
-      const allTx = Object.values(transactionsByPortfolio).flat()
+      const hiddenPortfolioIds = new Set((portfolios || []).filter(p => !!p.hideFromHomeAndAnalytics).map(p => p.id))
+      const allTx = Object.entries(transactionsByPortfolio)
+        .filter(([pid]) => !hiddenPortfolioIds.has(pid))
+        .map(([, list]) => list)
+        .flat()
       if (!Array.isArray(allTx) || allTx.length === 0) return []
       const grouped = allTx.reduce((acc, tx) => {
         const symbolId = (tx.sembol || '').toString()
@@ -316,7 +324,7 @@ const Anasayfa = () => {
       // sort by symbol name asc
       return entries.sort((a, b) => (a.symId || '').localeCompare(b.symId || ''))
     } catch (_) { return [] }
-  }, [transactionsByPortfolio, priceBySymbol])
+  }, [transactionsByPortfolio, priceBySymbol, portfolios])
 
   return (
     <div className="container-fluid py-4">
@@ -442,7 +450,11 @@ const Anasayfa = () => {
 
             <div className="modal-body">
               {(() => {
-                const allTx = Object.values(transactionsByPortfolio).flat()
+                const hiddenPortfolioIds = new Set((portfolios || []).filter(p => !!p.hideFromHomeAndAnalytics).map(p => p.id))
+                const allTx = Object.entries(transactionsByPortfolio)
+                  .filter(([pid]) => !hiddenPortfolioIds.has(pid))
+                  .map(([, list]) => list)
+                  .flat()
                 const bankTx = allTx.filter(tx => tx.platform === showBankHoldings)
                 
                 if (bankTx.length === 0) {

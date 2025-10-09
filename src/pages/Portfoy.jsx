@@ -13,6 +13,7 @@ const Portfoy = ({ onBack }) => {
   const [newPortfolioTitle, setNewPortfolioTitle] = useState('')
   const [newPortfolioDescription, setNewPortfolioDescription] = useState('')
   const [newPortfolioDate, setNewPortfolioDate] = useState('')
+  const [newPortfolioHideFromHomeAndAnalytics, setNewPortfolioHideFromHomeAndAnalytics] = useState(false)
   const [selectedPortfolio, setSelectedPortfolio] = useState(null)
   const [showEditPortfolio, setShowEditPortfolio] = useState(false)
   const [editingPortfolio, setEditingPortfolio] = useState(null)
@@ -20,7 +21,8 @@ const Portfoy = ({ onBack }) => {
     name: '',
     title: '',
     description: '',
-    date: ''
+    date: '',
+    hideFromHomeAndAnalytics: false
   })
   const [showImportSheet, setShowImportSheet] = useState(false)
   const [showMainImportSheet, setShowMainImportSheet] = useState(false)
@@ -138,16 +140,11 @@ const Portfoy = ({ onBack }) => {
   }, [])
 
   const fetchGlobalSheetPrices = async () => {
-    console.log('[Portfoy] Fetching global sheet prices...')
     try {
       // Log RAW rows from 'sembol_fiyat' without any transformations
       try {
         const rawPriceRows = await fetchRowsFromNamedTab('sembol_fiyat')
-        console.log('[Portfoy][RAW] semboI_fiyat rows (no transform)', rawPriceRows)
-      } catch (_) {}
-      try {
-        const rawTxRows = await fetchRowsFromNamedTab('portfoy_hareketleri')
-        console.log('[Portfoy][RAW] portfoy_hareketleri rows (no transform)', rawTxRows)
+        console.log('[Sheet] semboI_fiyat fetched', { rows: rawPriceRows?.length || 0 })
       } catch (_) {}
 
       const { priceBySymbol, currencyBySymbol } = await fetchPriceMapsFromGlobalSheet()
@@ -189,19 +186,10 @@ const Portfoy = ({ onBack }) => {
         })
       } catch (_) {}
       // Debug logs for fetched data
-      try {
-        const pricesDebug = Object.fromEntries(priceBySymbol)
-        const currenciesDebug = Object.fromEntries(currencyBySymbol || new Map())
-        console.log('[Portfoy] Fetched price map and currency map', {
-          symbols: Object.keys(pricesDebug).length,
-          prices: pricesDebug,
-          currencies: currenciesDebug
-        })
-      } catch (_) {}
-      console.log('[Portfoy] Prices loaded', { count: Object.keys(obj).length })
+      try { /* no-op debug removed */ } catch (_) {}
       setSheetPrices(obj)
     } catch (e) {
-      console.log('[Portfoy] fetchGlobalSheetPrices error', { name: e?.name, message: e?.message })
+      /* silent */
     }
   }
 
@@ -370,7 +358,7 @@ const Portfoy = ({ onBack }) => {
       try {
         const tq = query(collection(db, 'portfolios', p.id, 'transactions'), orderBy('createdAt', 'desc'))
         const unsub = onSnapshot(tq, (snap) => {
-          const tx = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          const tx = snap.docs.map(d => ({ ...d.data(), id: d.id }))
           setTransactionsByPortfolio(prev => ({ ...prev, [p.id]: tx }))
         })
         unsubs.push(unsub)
@@ -395,12 +383,14 @@ const Portfoy = ({ onBack }) => {
         title,
         description,
         date: dateVal,
+        hideFromHomeAndAnalytics: !!newPortfolioHideFromHomeAndAnalytics,
         createdAt: serverTimestamp()
       })
       setNewPortfolioName('')
       setNewPortfolioTitle('')
       setNewPortfolioDescription('')
       setNewPortfolioDate('')
+      setNewPortfolioHideFromHomeAndAnalytics(false)
       setShowCreatePortfolio(false)
     } catch (e) {
       // noop minimal handling
@@ -423,7 +413,8 @@ const Portfoy = ({ onBack }) => {
       name: p.name || '',
       title: p.title || '',
       description: p.description || '',
-      date: dateVal
+      date: dateVal,
+      hideFromHomeAndAnalytics: !!p.hideFromHomeAndAnalytics
     })
     setShowEditPortfolio(true)
   }
@@ -435,7 +426,8 @@ const Portfoy = ({ onBack }) => {
     const payload = {
       name,
       title: (editPortfolioData.title || '').trim(),
-      description: (editPortfolioData.description || '').trim()
+      description: (editPortfolioData.description || '').trim(),
+      hideFromHomeAndAnalytics: !!editPortfolioData.hideFromHomeAndAnalytics
     }
     const dateStr = (editPortfolioData.date || '').trim()
     try {
@@ -1006,10 +998,11 @@ const Portfoy = ({ onBack }) => {
     try {
       for (const { transactions } of selectedHoldingsList) {
         for (const tx of transactions) {
-          await addDoc(collection(db, 'portfolios', targetPortfolio.id, 'transactions'), {
-            ...tx,
-            createdAt: serverTimestamp()
-          })
+          // Avoid id collisions: never copy the id field
+          const { id: _omitId, ...txData } = tx || {}
+          // Also avoid carrying any read-only fields from snapshot
+          const dataToWrite = { ...txData, createdAt: serverTimestamp() }
+          const newRef = await addDoc(collection(db, 'portfolios', targetPortfolio.id, 'transactions'), dataToWrite)
         }
       }
 
@@ -1017,7 +1010,16 @@ const Portfoy = ({ onBack }) => {
       if (copyMoveMode === 'move') {
         for (const { portfolioId, transactions } of selectedHoldingsList) {
           for (const tx of transactions) {
-            await deleteDoc(doc(db, 'portfolios', portfolioId, 'transactions', tx.id))
+            try {
+              await deleteDoc(doc(db, 'portfolios', portfolioId, 'transactions', tx.id))
+              // Optimistic UI update
+              setTransactionsByPortfolio(prev => ({
+                ...prev,
+                [portfolioId]: (prev[portfolioId] || []).filter(t => t.id !== tx.id)
+              }))
+            } catch (e) {
+              console.error('[Move] Delete error', { portfolioId, txId: tx.id, error: e })
+            }
           }
         }
       }
@@ -1541,8 +1543,8 @@ const Portfoy = ({ onBack }) => {
                               </span>
                             </div>
 
-                            {list.map(tx => (
-                              <div key={tx.id} className="list-group-item bg-transparent d-flex align-items-center justify-content-between" >
+                            {list.map((tx, index) => (
+                              <div key={`${tx.id}-${index}`} className="list-group-item bg-transparent d-flex align-items-center justify-content-between" >
                                 <div className="d-flex align-items-center justify-content-between w-100">
                                   <div className="d-flex flex-column">
                                     <span className="fw-semibold">{tx.durum} - <small className="text-body-secondary">
@@ -1609,7 +1611,55 @@ const Portfoy = ({ onBack }) => {
                                           const ok = window.confirm('Bu işlemi silmek istediğinize emin misiniz?')
                                           if (!ok) return
                                           try {
-                                            await deleteDoc(doc(db, 'portfolios', p.id, 'transactions', tx.id))
+                                            const ref = doc(db, 'portfolios', p.id, 'transactions', tx.id)
+                                            await deleteDoc(ref)
+                                            // Optimistic UI update in case snapshot is delayed
+                                            try {
+                                              setTransactionsByPortfolio(prev => ({
+                                                ...prev,
+                                                [p.id]: (prev[p.id] || []).filter(t => t.id !== tx.id)
+                                              }))
+                                            } catch (_) {}
+                                            // Cleanup potential duplicates created historically
+                                            try {
+                                              const colRef = collection(db, 'portfolios', p.id, 'transactions')
+                                              const allSnap = await getDocs(colRef)
+                                              const sameSymbol = []
+                                              allSnap.forEach(d => {
+                                                const data = d.data() || {}
+                                                if ((data.sembol || '') === (tx.sembol || '')) sameSymbol.push({ id: d.id, data })
+                                              })
+                                              const approxEq = (a, b) => {
+                                                const na = Number(String(a).toString().replace(/,/g, '.'))
+                                                const nb = Number(String(b).toString().replace(/,/g, '.'))
+                                                if (isNaN(na) || isNaN(nb)) return String(a) === String(b)
+                                                return Math.abs(na - nb) < 1e-9
+                                              }
+                                              const isDup = (d) => {
+                                                try {
+                                                  return (
+                                                    (d.data.durum || '') === (tx.durum || '') &&
+                                                    (d.data.birim || '') === (tx.birim || '') &&
+                                                    approxEq(d.data.adet, tx.adet) &&
+                                                    approxEq(d.data.fiyat, tx.fiyat) &&
+                                                    approxEq(d.data.maaliyet, tx.maaliyet) &&
+                                                    String((d.data.tarih && d.data.tarih.toDate ? d.data.tarih.toDate() : d.data.tarih) || '') === String((tx.tarih && tx.tarih.toDate ? tx.tarih.toDate() : tx.tarih) || '')
+                                                  )
+                                                } catch { return false }
+                                              }
+                                              const dups = sameSymbol.filter(d => d.id !== tx.id && isDup(d))
+                                              if (dups.length > 0) {
+                                                for (const d of dups) {
+                                                  try {
+                                                    await deleteDoc(doc(db, 'portfolios', p.id, 'transactions', d.id))
+                                                  } catch (e2) {
+                                                    console.error('[DeleteTx] Duplicate remove error', { dupId: d.id, error: e2 })
+                                                  }
+                                                }
+                                              }
+                                            } catch (e3) {
+                                              console.error('[DeleteTx] Duplicate cleanup error', e3)
+                                            }
                                             try { window.alert('İşlem silindi.') } catch {}
                                           } catch (e) {
                                             console.error('Silme hatası:', e)
@@ -1748,6 +1798,20 @@ const Portfoy = ({ onBack }) => {
                     onChange={(e) => setNewPortfolioDescription(e.target.value)} 
                     placeholder="Notlarınızı yazın..."
                   />
+                </div>
+                <div className="col-12">
+                  <div className="form-check">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="new-hideFromHomeAndAnalytics"
+                      checked={!!newPortfolioHideFromHomeAndAnalytics}
+                      onChange={(e) => setNewPortfolioHideFromHomeAndAnalytics(e.target.checked)}
+                    />
+                    <label className="form-check-label" htmlFor="new-hideFromHomeAndAnalytics">
+                      Bu portföydeki hisseleri anasayfadaki bankalarda ve analitiklerde gösterme
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2406,6 +2470,20 @@ const Portfoy = ({ onBack }) => {
                     value={editPortfolioData.date} 
                     onChange={(e) => setEditPortfolioData(prev => ({ ...prev, date: e.target.value }))} 
                   />
+                </div>
+                <div className="col-12">
+                  <div className="form-check">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="edit-hideFromHomeAndAnalytics"
+                      checked={!!editPortfolioData.hideFromHomeAndAnalytics}
+                      onChange={(e) => setEditPortfolioData(prev => ({ ...prev, hideFromHomeAndAnalytics: e.target.checked }))}
+                    />
+                    <label className="form-check-label" htmlFor="edit-hideFromHomeAndAnalytics">
+                      Bu portföydeki hisseleri anasayfadaki bankalarda ve analitiklerde gösterme
+                    </label>
+                  </div>
                 </div>
                 <div className="col-12">
                   <label className="form-label">Açıklama</label>

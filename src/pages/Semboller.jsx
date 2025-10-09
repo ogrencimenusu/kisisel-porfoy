@@ -158,12 +158,12 @@ const Semboller = ({ onBack }) => {
   const fetchInvestingPrice = async (url, xpath, selector, regexPattern, contextSymbol) => {
     try {
       if (!url) return 'URL yok'
-      console.log('[Investing] Fetch start', { url, xpath, selector, regexPattern, contextSymbol })
+      
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
       const response = await fetch(proxyUrl)
-      console.log('[Investing] Proxy response', { status: response.status, ok: response.ok })
+      
       const data = await response.json()
-      console.log('[Investing] Contents length', { length: (data && data.contents ? data.contents.length : 0) })
+      
       const parser = new DOMParser()
       const doc = parser.parseFromString(data.contents, 'text/html')
       let extractedText = ''
@@ -175,7 +175,7 @@ const Semboller = ({ onBack }) => {
           extractedText = node.textContent.trim()
         } else {
           const title = doc.querySelector('title')?.textContent || ''
-          console.log('[Investing] Node not found for XPath', { xpath, titleSample: title })
+          
         }
       }
       // Try CSS selector if XPath failed
@@ -184,12 +184,12 @@ const Semboller = ({ onBack }) => {
           const el = doc.querySelector(selector)
           if (el && el.textContent) {
             extractedText = el.textContent.trim()
-            console.log('[Investing] CSS selector hit', selector)
+            
           } else {
-            console.log('[Investing] CSS selector miss', selector)
+            
           }
         } catch (e) {
-          console.log('[Investing] CSS selector error', e)
+          
         }
       }
       // If still nothing, try attribute-based regex on original HTML (borsa.doviz data-socket-key)
@@ -200,22 +200,22 @@ const Semboller = ({ onBack }) => {
           const m = (data && data.contents ? data.contents : '').match(socketRegex)
           if (m && m[1]) {
             extractedText = m[1].trim()
-            console.log('[Investing] data-socket-key match on original HTML', extractedText)
+            
           }
         } catch (e) {
-          console.log('[Investing] data-socket-key regex error', e)
+          
         }
       }
       // If still nothing, fallback via reader proxy
       if (!extractedText) {
         const title = doc.querySelector('title')?.textContent || ''
-        console.log('[Investing] Empty after DOM parse; trying reader proxy', { titleSample: title })
+        
         try {
           const readerUrl = `https://r.jina.ai/http://${url.replace(/^https?:\/\//, '')}`
-          console.log('[Investing] Fallback fetch via reader', { readerUrl })
+          
           const readerResp = await fetch(readerUrl)
           const readerText = await readerResp.text()
-          console.log('[Investing] Reader length', readerText.length)
+          
           // Attempt XPath against parsed HTML
           const altDoc = parser.parseFromString(readerText, 'text/html')
           if (xpath) {
@@ -223,7 +223,7 @@ const Semboller = ({ onBack }) => {
             const altNode = altRes.singleNodeValue
             if (altNode && altNode.textContent) {
               const t = altNode.textContent.trim()
-              console.log('[Investing] Fallback XPath hit', t.slice(0, 120))
+              
               extractedText = t
             }
           }
@@ -232,7 +232,7 @@ const Semboller = ({ onBack }) => {
             const selEl = altDoc.querySelector(selector)
             if (selEl && selEl.textContent) {
               extractedText = selEl.textContent.trim()
-              console.log('[Investing] Fallback selector hit', selector)
+              
             }
           }
           // Try attribute-based regex on reader HTML
@@ -243,10 +243,10 @@ const Semboller = ({ onBack }) => {
               const m2 = readerText.match(socketRegex2)
               if (m2 && m2[1]) {
                 extractedText = m2[1].trim()
-                console.log('[Investing] data-socket-key match on reader HTML', extractedText)
+                
               }
             } catch (e2) {
-              console.log('[Investing] data-socket-key regex on reader error', e2)
+              
             }
           }
           // Fallback 2: regex for a numeric price-looking token
@@ -254,19 +254,19 @@ const Semboller = ({ onBack }) => {
             const pattern = regexPattern && regexPattern.trim().length > 0 ? new RegExp(regexPattern) : /\b\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})\b/
             const numberMatch = readerText.match(pattern)
             if (numberMatch) {
-              console.log('[Investing] Regex price match', numberMatch[0])
+              
               extractedText = numberMatch[0]
             }
           }
         } catch (ferr) {
-          console.log('[Investing] Fallback error', ferr)
+          
         }
       }
       if (!extractedText) {
-        console.log('[Investing] Not found after all strategies')
+        
         return 'Bulunamadı'
       }
-      console.log('[Investing] Raw extracted text sample', extractedText.slice(0, 120))
+      
       return extractedText.replace(/[^\d,.-]/g, '')
     } catch (error) {
       console.error('Investing scrape error:', error)
@@ -317,7 +317,7 @@ const Semboller = ({ onBack }) => {
       if (m) return m[0].replace(/[^\d,.-]/g, '')
       return 'Bulunamadı'
     } catch (e) {
-      console.log('[Sheet] fetch error', e)
+      
       return 'Hata'
     }
   }
@@ -395,7 +395,7 @@ const Semboller = ({ onBack }) => {
     setInvestingTesting(true)
     setInvestingTestResult('')
     try {
-      console.log('[Investing][Test] Testing with', { url: symbolConfig.investingUrl, xpath: symbolConfig.investingXPath, selector: symbolConfig.investingSelector, regex: symbolConfig.investingRegex })
+      
       const val = await fetchInvestingPrice(
         symbolConfig.investingUrl,
         symbolConfig.investingXPath,
@@ -403,7 +403,7 @@ const Semboller = ({ onBack }) => {
         symbolConfig.investingRegex,
         symbolConfig.symbol
       )
-      console.log('[Investing][Test] Result', val)
+      
       setInvestingTestResult(val)
     } catch (e) {
       console.error('[Investing][Test] Error', e)

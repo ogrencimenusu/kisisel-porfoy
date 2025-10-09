@@ -16,7 +16,7 @@ export const getGlobalSheetUrlFromDb = async () => {
       if (url) return url
     }
   } catch (e) {
-    console.log('[Sheet][getGlobalSheetUrlFromDb] error', { name: e?.name, message: e?.message })
+    
   }
   return ''
 }
@@ -96,28 +96,22 @@ export const fetchSheetRows = async (url) => {
   const exportUrl = toCsvExportUrl(url)
   const startTs = Date.now()
   try {
-    console.log('[Sheet][fetchSheetRows] start', { exportUrl })
     const res = await fetch(exportUrl, { cache: 'no-cache' })
     const ct = res.headers?.get?.('content-type') || ''
-    console.log('[Sheet][fetchSheetRows] response meta', { ok: res.ok, status: res.status, contentType: ct })
     if (!res.ok) {
-      console.log('[Sheet][fetchSheetRows] non-ok response', { status: res.status, statusText: res.statusText })
       return []
     }
     const text = await res.text()
-    console.log('[Sheet][fetchSheetRows] body', { length: text.length, head: text.slice(0, 160) })
     // Captive portal / blocked HTML detection
     if (/<!DOCTYPE html>|<html|<head|<body|Access Denied|captcha|Login|Moved Temporarily/i.test(text)) {
-      console.log('[Sheet][fetchSheetRows] looks like HTML page instead of CSV (possible hotspot/captive portal/CORS)', { hint: text.slice(0, 200) })
+      
     }
     const lines = text.split(/\r?\n/)
     const sep = detectSep(lines)
-    console.log('[Sheet][fetchSheetRows] detected separator', sep)
     const rows = lines.filter(l => l.length > 0).map(l => splitWithQuotes(l, sep))
-    console.log('[Sheet][fetchSheetRows] parsed rows', { rows: rows.length, colsSample: rows[0]?.length || 0, durationMs: Date.now() - startTs })
     return rows
   } catch (e) {
-    console.log('[Sheet][fetchSheetRows] error', { name: e?.name, message: e?.message, durationMs: Date.now() - startTs })
+    
     return []
   }
 }
@@ -138,10 +132,10 @@ export const fetchRowsFromNamedTab = async (tabName) => {
     const lines = text.split(/\r?\n/)
     const sep = detectSep(lines)
     const rows = lines.filter(l => l.length > 0).map(l => splitWithQuotes(l, sep))
-    console.log('[Sheet][fetchRowsFromNamedTab] parsed rows', { tabName, rows: rows.length, durationMs: Date.now() - startTs })
+    
     return rows
   } catch (e) {
-    console.log('[Sheet][fetchRowsFromNamedTab] error', { tabName, name: e?.name, message: e?.message, durationMs: Date.now() - startTs })
+    
     return []
   }
 }
@@ -187,18 +181,16 @@ export const fetchPriceMapsFromGlobalSheet = async () => {
   if (!url) {
     url = getGlobalSheetUrl()
     if (!url) {
-      console.log('[Sheet][fetchPriceMapsFromGlobalSheet] no globalSheetUrl in DB or localStorage')
       return { priceBySymbol: new Map(), currencyBySymbol: new Map() }
     }
-    console.log('[Sheet][fetchPriceMapsFromGlobalSheet] using localStorage URL (DB empty)')
   } else {
-    console.log('[Sheet][fetchPriceMapsFromGlobalSheet] using Firestore URL')
+    
   }
   const t0 = Date.now()
   const rows = await fetchRowsFromNamedTab('sembol_fiyat')
   const dataRows = rows.length > 0 ? rows.slice(1) : rows
   const maps = buildSymbolMaps(dataRows)
-  console.log('[Sheet][fetchPriceMapsFromGlobalSheet] built maps', { symbols: maps.priceBySymbol.size, durationMs: Date.now() - t0 })
+  
   return maps
 }
 

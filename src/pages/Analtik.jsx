@@ -295,7 +295,11 @@ const Analtik = () => {
 
   // Her sembol için kalan adet hesabı (FIFO) ve ilgili sembolBorsa'yı kullanır
   const donutData = useMemo(() => {
-    const allTx = Object.values(transactionsByPortfolio).flat()
+    const hiddenPortfolioIds = new Set((portfolios || []).filter(p => !!p.hideFromHomeAndAnalytics).map(p => p.id))
+    const allTx = Object.entries(transactionsByPortfolio)
+      .filter(([pid]) => !hiddenPortfolioIds.has(pid))
+      .map(([, list]) => list)
+      .flat()
     if (allTx.length === 0) return []
     // Sembole göre grupla, sonra her sembol için kalan adet bul
     const bySymbol = allTx.reduce((acc, tx) => {
@@ -360,7 +364,7 @@ const Analtik = () => {
       })
       .sort((a, b) => b.value - a.value)
     return entries
-  }, [transactionsByPortfolio, priceMap, currencyMap, fxMap])
+  }, [transactionsByPortfolio, priceMap, currencyMap, fxMap, portfolios])
 
   const totals = useMemo(() => {
     const tryTotal = donutData.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
@@ -376,7 +380,11 @@ const Analtik = () => {
 
   // Platform bazlı dağılım (platform + para birimi), USD'ler TL'ye çevrilerek renklendirilir
   const platformDonutData = useMemo(() => {
-    const allTx = Object.values(transactionsByPortfolio).flat()
+    const hiddenPortfolioIds = new Set((portfolios || []).filter(p => !!p.hideFromHomeAndAnalytics).map(p => p.id))
+    const allTx = Object.entries(transactionsByPortfolio)
+      .filter(([pid]) => !hiddenPortfolioIds.has(pid))
+      .map(([, list]) => list)
+      .flat()
     if (allTx.length === 0) return []
 
     // platform -> symbol -> tx list grouping
@@ -455,7 +463,7 @@ const Analtik = () => {
       })
       .sort((a, b) => b.chartValue - a.chartValue)
     return entries
-  }, [transactionsByPortfolio, banks, priceMap, currencyMap, fxMap])
+  }, [transactionsByPortfolio, banks, priceMap, currencyMap, fxMap, portfolios])
 
   const platformTotals = useMemo(() => {
     const tryTotal = platformDonutData.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
