@@ -990,6 +990,56 @@ const Portfoy = ({ onBack }) => {
     setIsSelectMode(false)
   }
 
+  // Seçili hisseleri silme fonksiyonu
+  const handleDeleteSelectedHoldings = async () => {
+    const selectedCount = getSelectedHoldingsCount()
+    if (selectedCount === 0) return
+
+    const confirmMessage = `${selectedCount} hisse silinecek. Bu işlem geri alınamaz. Devam etmek istediğinize emin misiniz?`
+    const confirmed = window.confirm(confirmMessage)
+    if (!confirmed) return
+
+    try {
+      const selectedHoldingsList = []
+      Object.entries(selectedHoldings).forEach(([portfolioId, symbols]) => {
+        Object.entries(symbols).forEach(([symbol, isSelected]) => {
+          if (isSelected) {
+            const portfolio = portfolios.find(p => p.id === portfolioId)
+            const transactions = transactionsByPortfolio[portfolioId] || []
+            const symbolTransactions = transactions.filter(tx => tx.sembol === symbol)
+            selectedHoldingsList.push({ portfolio, symbol, transactions: symbolTransactions })
+          }
+        })
+      })
+
+      let deletedCount = 0
+      for (const { portfolio, transactions } of selectedHoldingsList) {
+        for (const tx of transactions) {
+          try {
+            const ref = doc(db, 'portfolios', portfolio.id, 'transactions', tx.id)
+            await deleteDoc(ref)
+            
+            // Optimistic UI update
+            setTransactionsByPortfolio(prev => ({
+              ...prev,
+              [portfolio.id]: (prev[portfolio.id] || []).filter(t => t.id !== tx.id)
+            }))
+            deletedCount++
+          } catch (e) {
+            console.error('[Delete] Error', { portfolioId: portfolio.id, txId: tx.id, error: e })
+          }
+        }
+      }
+
+      try { window.alert(`${deletedCount} hisse silindi.`) } catch {}
+      
+      // Temizle
+      clearAllSelections()
+    } catch (e) {
+      try { window.alert('Silme işlemi sırasında bir hata oluştu.') } catch {}
+    }
+  }
+
   // Kopyalama/taşıma fonksiyonları
   const handleCopyMoveHoldings = async () => {
     if (!targetPortfolio) return
@@ -1186,6 +1236,13 @@ const Portfoy = ({ onBack }) => {
               disabled={getSelectedHoldingsCount() === 0}
             >
               <i className="bi bi-arrow-right me-1"></i>Taşı
+            </button>
+            <button 
+              className="btn btn-outline-danger btn-sm"
+              onClick={handleDeleteSelectedHoldings}
+              disabled={getSelectedHoldingsCount() === 0}
+            >
+              <i className="bi bi-trash me-1"></i>Sil
             </button>
             <button 
               className="btn btn-outline-secondary btn-sm"
