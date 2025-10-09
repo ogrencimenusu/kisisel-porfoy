@@ -18,7 +18,7 @@ const Anasayfa = () => {
   const [expandedStarred, setExpandedStarred] = useState({})
   const [showBankHoldings, setShowBankHoldings] = useState(null)
   const [expandedBankGroups, setExpandedBankGroups] = useState({})
-  const [hideZeroBankHoldings, setHideZeroBankHoldings] = useState(false)
+  const [hideZeroBankHoldings, setHideZeroBankHoldings] = useState(true)
 
   useEffect(() => {
     const unsubBanks = onSnapshot(collection(db, 'banks'), (snapshot) => {

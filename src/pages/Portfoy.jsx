@@ -58,7 +58,7 @@ const Portfoy = ({ onBack }) => {
   const [editingTx, setEditingTx] = useState(null)
   const [expandedGroups, setExpandedGroups] = useState({})
   const [expandedPortfolios, setExpandedPortfolios] = useState({})
-  const [hideZeroHoldings, setHideZeroHoldings] = useState(false)
+  const [hideZeroHoldings, setHideZeroHoldings] = useState(true)
   const [showSortSheet, setShowSortSheet] = useState(false)
   const [sortOption, setSortOption] = useState('symbol_asc') // 'symbol_asc' | 'symbol_desc' | 'date_asc' | 'date_desc' | 'quantity_asc' | 'quantity_desc'
   const [sheetPrices, setSheetPrices] = useState({})
@@ -507,9 +507,35 @@ const Portfoy = ({ onBack }) => {
     try {
       const hasCurrency = !!currency
       const options = hasCurrency 
-        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
-        : { maximumFractionDigits: 6, useGrouping: true }
+        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }
+        : { maximumFractionDigits: 6, useGrouping: false }
       return new Intl.NumberFormat(locale, options).format(isNaN(num) ? 0 : num)
+    } catch (_) {
+      return String(isNaN(num) ? 0 : num)
+    }
+  }
+
+  const formatAdet = (value) => {
+    const num = typeof value === 'number' ? value : parseNumber(value)
+    try {
+      return new Intl.NumberFormat('tr-TR', { 
+        minimumFractionDigits: 0, 
+        maximumFractionDigits: 6, 
+        useGrouping: false 
+      }).format(isNaN(num) ? 0 : num)
+    } catch (_) {
+      return String(isNaN(num) ? 0 : num)
+    }
+  }
+
+  const formatNumberTurkish = (value) => {
+    const num = typeof value === 'number' ? value : parseNumber(value)
+    try {
+      return new Intl.NumberFormat('tr-TR', { 
+        minimumFractionDigits: 0, 
+        maximumFractionDigits: 6, 
+        useGrouping: false 
+      }).format(isNaN(num) ? 0 : num)
     } catch (_) {
       return String(isNaN(num) ? 0 : num)
     }
@@ -1419,7 +1445,7 @@ const Portfoy = ({ onBack }) => {
                     return acc
                   }, {})
                   // FIFO hesaplaması
-                  const calculateFIFO = (transactions) => {
+                  const calculateFIFO = (transactions, symbol) => {
                       // Tarihe göre sırala (en eski önce)
                       const sortedTx = [...transactions].sort((a, b) => {
                         const dateA = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
@@ -1427,8 +1453,6 @@ const Portfoy = ({ onBack }) => {
                         return dateA - dateB
                       })
                       
-                      let remainingAdet = 0
-                      let remainingMaaliyet = 0
                       let toplamAlisMaaliyet = 0
                       let toplamSatisGelir = 0
                       const alislar = []
@@ -1445,19 +1469,15 @@ const Portfoy = ({ onBack }) => {
                             birimFiyat: birimFiyat,
                             tarih: tx.tarih
                           })
-                          remainingAdet += adet
-                          remainingMaaliyet += maaliyet
                           toplamAlisMaaliyet += maaliyet
                         } else if (tx.durum === 'Satış') {
                           let satisAdet = adet
-                          let satisMaaliyet = 0
                           
                           // FIFO ile satış yap
                           while (satisAdet > 0 && alislar.length > 0) {
                             const alis = alislar[0]
                             const kullanilacakAdet = Math.min(satisAdet, alis.adet)
                             
-                            satisMaaliyet += kullanilacakAdet * alis.birimFiyat
                             alis.adet -= kullanilacakAdet
                             alis.maaliyet -= kullanilacakAdet * alis.birimFiyat
                             satisAdet -= kullanilacakAdet
@@ -1467,16 +1487,24 @@ const Portfoy = ({ onBack }) => {
                             }
                           }
                           
-                          remainingAdet -= adet
-                          remainingMaaliyet -= satisMaaliyet
                           toplamSatisGelir += maaliyet // Satış geliri
                         }
                       }
                       
-                      // Kar/Zarar hesaplama (sadece tamamen satılmış olanlar için)
-                      const karZarar = remainingAdet === 0 ? toplamSatisGelir - toplamAlisMaaliyet : 0
+                      // Kalan adet ve maaliyet hesaplama
+                      let remainingAdet = 0
+                      let remainingMaaliyet = 0
+                      
+                      for (const alis of alislar) {
+                        remainingAdet += alis.adet
+                        remainingMaaliyet += alis.maaliyet
+                      }
+                      
+                      // Kar/Zarar hesaplama (tamamen satılmış veya neredeyse satılmış olanlar için)
+                      const karZarar = Math.abs(remainingAdet) < 0.0001 ? toplamSatisGelir - toplamAlisMaaliyet : 0
                       const karZararYuzde = toplamAlisMaaliyet > 0 ? (karZarar / toplamAlisMaaliyet) * 100 : 0
                       
+
                       return {
                         adet: remainingAdet,
                         maaliyet: remainingMaaliyet,
@@ -1489,7 +1517,7 @@ const Portfoy = ({ onBack }) => {
 
                   const entries = Object.keys(grouped).map(symbol => {
                     const list = grouped[symbol]
-                    const fifoTotals = calculateFIFO(list)
+                    const fifoTotals = calculateFIFO(list, symbol)
                     const lastDate = list.reduce((max, tx) => {
                       const d = tx.tarih instanceof Date ? tx.tarih : (tx.tarih?.toDate?.() || new Date(0))
                       return d > max ? d : max
@@ -1580,7 +1608,7 @@ const Portfoy = ({ onBack }) => {
                                 return val ? val : '—'
                               })()} {birim}
                               <span className="small text-body-secondary ms-2">
-                                  ({formatNumber(fifoTotals.adet)} adet)
+                                  ({formatAdet(fifoTotals.adet)} adet)
                                 </span>
                               </span>
                               </span>
@@ -1589,8 +1617,7 @@ const Portfoy = ({ onBack }) => {
                           </div>
                           <div className="text-end">
                             
-                            
-                            {currentValue !== null && (
+                            {currentValue !== null && fifoTotals.adet > 0 && (
                               <div className="small mt-1">
                                 Güncel değer: {formatNumber(currentValue, birim)} {birim} 
                                 
@@ -1616,10 +1643,10 @@ const Portfoy = ({ onBack }) => {
                                 })()}
                                </div>
                              )*/}
-                            {false && fifoTotals.adet === 0 && fifoTotals.karZarar !== 0 && (
-                              <div className={`small ${fifoTotals.karZarar > 0 ? 'text-success' : 'text-danger'}`}>
+                            {Math.abs(fifoTotals.adet) < 0.0001 && (
+                              <div className={`small ${fifoTotals.karZarar > 0 ? 'text-success' : (fifoTotals.karZarar < 0 ? 'text-danger' : 'text-body-secondary')}`}>
                                 <div className="fw-semibold">
-                                  {fifoTotals.karZarar > 0 ? 'Kar' : 'Zarar'}: {formatNumber(Math.abs(fifoTotals.karZarar), birim)} {birim}
+                                  {fifoTotals.karZarar > 0 ? 'Kar' : (fifoTotals.karZarar < 0 ? 'Zarar' : 'Sonuç')}: {formatNumber(Math.abs(fifoTotals.karZarar), birim)} {birim}
                                 </div>
                                 <div>
                                   {fifoTotals.karZararYuzde > 0 ? '+' : ''}{Number(fifoTotals.karZararYuzde).toFixed(2)}%
@@ -1633,7 +1660,7 @@ const Portfoy = ({ onBack }) => {
 
                             <div className='d-flex flex-row  gap-1 p-1' style={{fontSize: '0.8rem'}}> 
                             <span className="text-small d-block font-weight-normal" >
-                              {fifoTotals.adet > 0 ? 'Kalan Adet ' : 'Toplam Adet '}: {formatNumber(fifoTotals.adet)} 
+                              {fifoTotals.adet > 0 ? 'Kalan Adet ' : 'Toplam Adet '}: {formatAdet(fifoTotals.adet)} 
                               </span>
                               <span className="text-small d-block font-weight-normal" >
                                - {fifoTotals.adet > 0 ? 'Kalan Maaliyet' : 'Toplam Maaliyet'}: {formatNumber(fifoTotals.maaliyet, birim)} {birim}
@@ -1656,7 +1683,7 @@ const Portfoy = ({ onBack }) => {
                                 <div className="d-flex align-items-center justify-content-between w-100">
                                   <div className="d-flex flex-column">
                                     <span className="fw-semibold">{tx.durum} - <small className="text-body-secondary">
-                                      {formatNumber(tx.adet)} Adet,  {(() => {
+                                      {formatAdet(tx.adet)} Adet,  {(() => {
                                         const symCfg = symbolsData.find(s => s.id === tx.sembol)
                                         const desiredStr = desiredTransformString(tx.fiyat, symCfg?.desiredSample, tx.birim)
                                         if (desiredStr) return desiredStr
@@ -2110,12 +2137,12 @@ const Portfoy = ({ onBack }) => {
                 </div>
                 <div className="col-12 col-md-6">
                   <label className="form-label">Adet</label>
-                  <input type="text" inputMode="decimal" className="form-control" value={formData.adet} onChange={(e) => handleChange('adet', e.target.value)} placeholder="Örn: 2293,1" />
+                  <input type="text" inputMode="decimal" className="form-control" value={formatNumberTurkish(formData.adet)} onChange={(e) => handleChange('adet', e.target.value)} placeholder="Örn: 2293,1" />
                 </div>
                 <div className="col-12 col-md-6">
                   <label className="form-label">Fiyat</label>
                   <div className="input-group">
-                    <input type="text" inputMode="decimal" className="form-control" value={formData.fiyat} onChange={(e) => handleChange('fiyat', e.target.value)} placeholder={(formData.birim === 'TRY' || formData.birim === '₺') ? 'Örn: 36,07173' : 'e.g. 36.07173'} />
+                    <input type="text" inputMode="decimal" className="form-control" value={formatNumberTurkish(formData.fiyat)} onChange={(e) => handleChange('fiyat', e.target.value)} placeholder={(formData.birim === 'TRY' || formData.birim === '₺') ? 'Örn: 36,07173' : 'e.g. 36.07173'} />
                     <span className="input-group-text">
                       {getCurrencySymbol(formData.birim)}
                     </span>
@@ -2124,7 +2151,7 @@ const Portfoy = ({ onBack }) => {
                 <div className="col-12 col-md-6">
                   <label className="form-label">Komisyon</label>
                   <div className="input-group">
-                    <input type="text" inputMode="decimal" className="form-control" value={formData.komisyon} onChange={(e) => handleChange('komisyon', e.target.value)} placeholder={(formData.birim === 'TRY' || formData.birim === '₺') ? 'Örn: 0,25' : 'e.g. 0.25'} />
+                    <input type="text" inputMode="decimal" className="form-control" value={formatNumberTurkish(formData.komisyon)} onChange={(e) => handleChange('komisyon', e.target.value)} placeholder={(formData.birim === 'TRY' || formData.birim === '₺') ? 'Örn: 0,25' : 'e.g. 0.25'} />
                     <span className="input-group-text">
                       {getCurrencySymbol(formData.birim)}
                     </span>
@@ -2133,7 +2160,7 @@ const Portfoy = ({ onBack }) => {
                 <div className="col-12 col-md-6">
                   <label className="form-label">Maaliyet</label>
                   <div className="input-group">
-                    <input type="text" className="form-control" value={formatNumber(formData.maaliyet, formData.birim)} readOnly />
+                    <input type="text" className="form-control" value={formatNumberTurkish(formData.maaliyet)} readOnly />
                     <span className="input-group-text">
                       {getCurrencySymbol(formData.birim)}
                     </span>
