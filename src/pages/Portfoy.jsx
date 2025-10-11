@@ -1157,17 +1157,18 @@ const Portfoy = ({ onBack }) => {
   }
 
   return (
-    <div className="container-fluid py-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div className="d-flex align-items-center">
-          <button className="btn btn-link p-0 me-3" onClick={onBack} aria-label="Geri dön">
+    <div className="container-fluid py-4 ">
+      <div className=" border-bottom mb-5 pb-2">
+        <div className="d-flex align-items-start pb-4">
+        <button className="btn btn-link p-0 me-3" onClick={onBack} aria-label="Geri dön">
             <i className="bi bi-chevron-left" style={{ fontSize: '1.5rem' }}></i>
           </button>
           <h4 className="display-6 mb-0">
             <i className="bi bi-globe2 me-3"></i>Portföyler
           </h4>
         </div>
-        <div className="d-flex gap-2">
+        <div className="d-flex align-items-center justify-content-space-between">
+          
           <button 
             className="btn btn-outline-success rounded-circle"
             style={{ width: '40px', height: '40px' }}
@@ -1231,6 +1232,9 @@ const Portfoy = ({ onBack }) => {
             <i className="bi bi-plus"></i>
           </button>
         </div>
+        <div className="d-flex gap-2">
+          
+        </div>
       </div>
 
       {/* Seçim modu butonları */}
@@ -1285,87 +1289,86 @@ const Portfoy = ({ onBack }) => {
         {portfolios.map((p) => (
           <div 
             key={p.id} 
-            className="card shadow-sm border-0"
+            className="card shadow-sm border-0 mb-2"
             draggable
             onDragStart={(e) => onDragStartPortfolio(e, p.id)}
             onDragOver={(e) => onDragOverPortfolio(e, p.id)}
             onDrop={(e) => onDropPortfolio(e, p.id)}
           >
-            <div className="card-body d-flex align-items-center justify-content-between">
-              <div className="d-flex align-items-center gap-3" role="button" onClick={() => {
-                setExpandedPortfolios(prev => ({ ...prev, [p.id]: !prev[p.id] }))
-              }}>
-                <i className={`bi ${expandedPortfolios[p.id] ? 'bi-caret-down' : 'bi-caret-right'}`}></i>
-                <div className="rounded-3 d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px', background: 'var(--bs-tertiary-bg)' }}>
-                  <i className="bi bi-folder2" style={{ fontSize: '1.2rem' }}></i>
+            <div className="card-body p-1 pb-2">
+              <div className="">
+                <div className="d-flex align-items-start gap-3" role="button" onClick={() => {
+                  setExpandedPortfolios(prev => ({ ...prev, [p.id]: !prev[p.id] }))
+                }}>
+                  <i className={`bi ${expandedPortfolios[p.id] ? 'bi-caret-down' : 'bi-caret-right'}`}></i>
+              
+                  <div className="d-flex flex-column">
+                    <span className="fw-semibold d-flex align-items-center gap-2">
+                      <span>{p.name || 'Adsız portföy'}</span> {p.starred ? <i className="bi bi-star-fill text-warning"></i> : null}
+                      {(() => {
+                        try {
+                          const txs = transactionsByPortfolio[p.id] || []
+                          const totalStopajTry = txs
+                            .filter(tx => (tx.durum || '').toLowerCase() === 'stopaj kesintisi' && (tx.birim === 'TRY' || tx.birim === '₺'))
+                            .reduce((sum, tx) => sum + (parseNumber(tx.maaliyet) || 0), 0)
+                          if (!totalStopajTry) return null
+                          return (
+                            <span className="badge bg-light text-dark border small">Stopaj: {formatNumber(totalStopajTry, '₺')} ₺</span>
+                          )
+                        } catch (_) { return null }
+                      })()}
+                    </span>
+                    <small className="text-body-secondary d-block">{p.createdAt?.toDate?.().toLocaleString?.() || ''}</small>
+                  </div>
                 </div>
-                <div className="d-flex flex-column">
-                  <span className="fw-semibold d-flex align-items-center gap-2">
-                    <span>{p.name || 'Adsız portföy'}</span> {p.starred ? <i className="bi bi-star-fill text-warning"></i> : null}
-                    {(() => {
-                      try {
-                        const txs = transactionsByPortfolio[p.id] || []
-                        const totalStopajTry = txs
-                          .filter(tx => (tx.durum || '').toLowerCase() === 'stopaj kesintisi' && (tx.birim === 'TRY' || tx.birim === '₺'))
-                          .reduce((sum, tx) => sum + (parseNumber(tx.maaliyet) || 0), 0)
-                        if (!totalStopajTry) return null
-                        return (
-                          <span className="badge bg-light text-dark border small">Stopaj: {formatNumber(totalStopajTry, '₺')} ₺</span>
-                        )
-                      } catch (_) { return null }
-                    })()}
-                  </span>
-                  <small className="text-body-secondary d-block">{p.createdAt?.toDate?.().toLocaleString?.() || ''}</small>
-                  {(() => {
-                    const s = getPortfolioSummary(p.id)
-                    if (!s) return null
-                    return (
-                      <div className="small">
-                        <div>
-                        ₺ Güncel: {formatNumber(s.current['₺'] || 0, '₺')}  {s.base['₺'] > 0 ? <span className={((s.current['₺'] - s.base['₺']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['₺'] - s.base['₺']) / s.base['₺']) * 100).toFixed(2)}%)</span> : null}
-                        </div>
-                        <div>
-                          $
-                          Güncel: {formatNumber(s.current['USD'] || 0, 'USD')}  {s.base['USD'] > 0 ? <span className={((s.current['USD'] - s.base['USD']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['USD'] - s.base['USD']) / s.base['USD']) * 100).toFixed(2)}%)</span> : null}
-                        </div>
-                        {(() => {
-                          try {
-                            // Prefer tl_price USD if available
-                            let usdTry = parseNumber(usdTryTlPrice)
-                            if (!(usdTry > 0)) {
-                              const usdCandidates = [
-                                'USDTRY', 'USDTTRY', 'USD-TRY', 'USD/TRY', 'USD_TL', 'USD TL', 'DOLAR', 'DOLAR_TL'
-                              ]
-                              let usdTryRaw = null
-                              for (const key of usdCandidates) {
-                                const v = sheetPrices[key]
-                                if (typeof v !== 'undefined' && v !== null && String(v).trim() !== '') { usdTryRaw = v; break }
-                              }
-                              if (!usdTryRaw && typeof sheetPrices['TRYUSD'] !== 'undefined') {
-                                const tryUsd = parseNumber(sheetPrices['TRYUSD'])
-                                if (tryUsd > 0) usdTryRaw = 1 / tryUsd
-                              }
-                              usdTry = parseNumber(usdTryRaw)
-                            }
-                            const tlPart = Number(s.current['₺'] || 0)
-                            const usdPart = Number(s.current['USD'] || 0)
-                            const totalTl = tlPart + (usdTry > 0 ? (usdPart * usdTry) : 0)
-                            if (tlPart > 0 || (usdPart > 0 && usdTry > 0)) {
-                              return (
-                                <div>
-                                  Toplam (₺): {formatNumber(totalTl, '₺')}
-                                </div>
-                              )
-                            }
-                            return null
-                          } catch (_) { return null }
-                        })()}
+                {(() => {
+                  const s = getPortfolioSummary(p.id)
+                  if (!s) return null
+                  return (
+                    <div className="small border-top pt-2 border-bottom pb-2 px-4">
+                      <div>
+                      ₺ Güncel: {formatNumber(s.current['₺'] || 0, '₺')}  {s.base['₺'] > 0 ? <span className={((s.current['₺'] - s.base['₺']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['₺'] - s.base['₺']) / s.base['₺']) * 100).toFixed(2)}%)</span> : null}
                       </div>
-                    )
-                  })()}
-                </div>
+                      <div>
+                        $ Güncel: {formatNumber(s.current['USD'] || 0, 'USD')}  {s.base['USD'] > 0 ? <span className={((s.current['USD'] - s.base['USD']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['USD'] - s.base['USD']) / s.base['USD']) * 100).toFixed(2)}%)</span> : null}
+                      </div>
+                      {(() => {
+                        try {
+                          // Prefer tl_price USD if available
+                          let usdTry = parseNumber(usdTryTlPrice)
+                          if (!(usdTry > 0)) {
+                            const usdCandidates = [
+                              'USDTRY', 'USDTTRY', 'USD-TRY', 'USD/TRY', 'USD_TL', 'USD TL', 'DOLAR', 'DOLAR_TL'
+                            ]
+                            let usdTryRaw = null
+                            for (const key of usdCandidates) {
+                              const v = sheetPrices[key]
+                              if (typeof v !== 'undefined' && v !== null && String(v).trim() !== '') { usdTryRaw = v; break }
+                            }
+                            if (!usdTryRaw && typeof sheetPrices['TRYUSD'] !== 'undefined') {
+                              const tryUsd = parseNumber(sheetPrices['TRYUSD'])
+                              if (tryUsd > 0) usdTryRaw = 1 / tryUsd
+                            }
+                            usdTry = parseNumber(usdTryRaw)
+                          }
+                          const tlPart = Number(s.current['₺'] || 0)
+                          const usdPart = Number(s.current['USD'] || 0)
+                          const totalTl = tlPart + (usdTry > 0 ? (usdPart * usdTry) : 0)
+                          if (tlPart > 0 || (usdPart > 0 && usdTry > 0)) {
+                            return (
+                              <div>
+                                Toplam (₺): {formatNumber(totalTl, '₺')}
+                              </div>
+                            )
+                          }
+                          return null
+                        } catch (_) { return null }
+                      })()}
+                    </div>
+                  )
+                })()}
               </div>
-              <div className="d-flex gap-2">
+              <div className="d-flex gap-2 mt-2">
                 <button
                   className="btn btn-outline-secondary rounded-circle"
                   style={{ width: '36px', height: '36px' }}

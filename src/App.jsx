@@ -92,14 +92,14 @@ function App() {
         return <Anasayfa />
       case 'analtik':
         return <Analtik />
-      case 'kartlar':
-        return <Kartlar />
+      case 'portfoy':
+        return <Portfoy />
       case 'ayarlar':
         return <Ayarlar />
       case 'add':
         return <Ekle onNavigate={(dest) => setActiveTab(dest)} />
-      case 'portfoy':
-        return <Portfoy onBack={() => setActiveTab('add')} />
+      case 'kartlar':
+        return <Kartlar onBack={() => setActiveTab('add')} />
       case 'banka':
         return <Banka onBack={() => setActiveTab('add')} />
       case 'semboller':

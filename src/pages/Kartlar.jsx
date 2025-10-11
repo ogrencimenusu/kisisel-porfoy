@@ -22,6 +22,8 @@ const Kartlar = () => {
   const [newCard, setNewCard] = useState({ bankId: '', cardNumber: '', cardType: 'Kredi Kartı', limit: '', expiry: '', cvc: '' });
   const [showOperationsSheet, setShowOperationsSheet] = useState(false);
   const [expandedBankIds, setExpandedBankIds] = useState({});
+  const [portfolios, setPortfolios] = useState([]);
+  const [transactionsByPortfolio, setTransactionsByPortfolio] = useState({});
 
   // Firebase realtime dinleme
   useEffect(() => {
@@ -37,12 +39,123 @@ const Kartlar = () => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setCards(data);
     });
+    // Listen to portfolios
+    const unsubPortfolios = onSnapshot(collection(db, 'portfolios'), (portfolioSnapshot) => {
+      const portfolioData = portfolioSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setPortfolios(portfolioData);
+    });
+
+    // Listen to all transactions from all portfolios
+    const unsubTransactions = onSnapshot(collection(db, 'transactions'), (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const grouped = data.reduce((acc, tx) => {
+        const portfolioId = tx.portfolioId || 'default';
+        if (!acc[portfolioId]) acc[portfolioId] = [];
+        acc[portfolioId].push(tx);
+        return acc;
+      }, {});
+      setTransactionsByPortfolio(grouped);
+    });
     return () => {
       try { unsubBanks(); } catch {}
       try { unsubAccounts(); } catch {}
       try { unsubCards(); } catch {}
+      try { unsubPortfolios(); } catch {}
+      try { unsubTransactions(); } catch {}
     };
   }, []);
+
+  // Get portfolio holdings for a specific bank
+  const getBankPortfolioHoldings = (bankId) => {
+    const parseNumber = (val) => {
+      if (typeof val === 'number') return isNaN(val) ? 0 : val;
+      if (!val) return 0;
+      const normalized = String(val)
+        .replace(/\s/g, '')
+        .replace(/\./g, '')
+        .replace(/,/g, '.')
+        .replace(/[^0-9.-]/g, '');
+      const num = parseFloat(normalized);
+      return isNaN(num) ? 0 : num;
+    };
+
+    const calcFifoRemaining = (list) => {
+      const sorted = [...list].sort((a, b) => {
+        const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0));
+        const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0));
+        return da - db;
+      });
+      let remainingAdet = 0;
+      let remainingMaaliyet = 0;
+      const buys = [];
+      sorted.forEach(tx => {
+        const adet = Number(parseNumber(tx.adet) || 0);
+        const maaliyet = Number(parseNumber(tx.maaliyet) || 0);
+        const birimFiyat = adet > 0 ? (maaliyet / adet) : 0;
+        if ((tx.durum || '') === 'Alış') {
+          buys.push({ adet, birimFiyat });
+          remainingAdet += adet;
+          remainingMaaliyet += maaliyet;
+        } else if ((tx.durum || '') === 'Satış') {
+          let sellLeft = adet;
+          let sellCost = 0;
+          while (sellLeft > 0 && buys.length > 0) {
+            const b = buys[0];
+            const use = Math.min(sellLeft, b.adet);
+            sellCost += use * b.birimFiyat;
+            b.adet -= use;
+            sellLeft -= use;
+            if (b.adet <= 0) buys.shift();
+          }
+          remainingAdet -= adet;
+          remainingMaaliyet -= sellCost;
+        }
+      });
+      return { remainingAdet: Number(remainingAdet || 0), remainingMaaliyet: Number(remainingMaaliyet || 0) };
+    };
+
+    const holdings = [];
+    
+    // Get bank name for comparison
+    const bank = banks.find(b => b.id === bankId);
+    const bankName = bank?.name || '';
+    
+    // Get all transactions for this bank across all portfolios
+    Object.entries(transactionsByPortfolio).forEach(([portfolioId, transactions]) => {
+      // Filter transactions by both bank ID and bank name (since platform field can be either)
+      const bankTransactions = transactions.filter(tx => {
+        const platform = (tx.platform || '').toString();
+        return platform === bankId || platform === bankName;
+      });
+      
+      if (bankTransactions.length > 0) {
+        // Group by symbol
+        const grouped = bankTransactions.reduce((acc, tx) => {
+          const symbol = tx.sembol || '—';
+          acc[symbol] = acc[symbol] || [];
+          acc[symbol].push(tx);
+          return acc;
+        }, {});
+
+        // Calculate FIFO for each symbol
+        Object.entries(grouped).forEach(([symbol, symbolTransactions]) => {
+          const fifo = calcFifoRemaining(symbolTransactions);
+          if (fifo.remainingAdet > 0) {
+            const portfolio = portfolios.find(p => p.id === portfolioId);
+            holdings.push({
+              portfolioId,
+              portfolioName: portfolio?.name || portfolio?.title || 'Bilinmeyen Portföy',
+              symbol,
+              quantity: fifo.remainingAdet,
+              cost: fifo.remainingMaaliyet
+            });
+          }
+        });
+      }
+    });
+
+    return holdings;
+  };
 
   const fetchBanks = async () => {
     try {
@@ -354,8 +467,66 @@ const Kartlar = () => {
     }
   };
 
-  const handleDeleteBank = (bank) => {
+  const handleDeleteBank = async (bank) => {
     setDeletingBank(bank);
+    
+    // Debug: Show all transactions for this bank when opening delete sheet
+    console.log('=== Banka Silme Sheet Açılıyor ===');
+    console.log('Banka ID:', bank.id);
+    console.log('Banka Adı:', bank.name);
+    console.log('transactionsByPortfolio state:', transactionsByPortfolio);
+    console.log('Portfolios state:', portfolios);
+    
+    // If transactionsByPortfolio is empty, try to fetch manually
+    if (Object.keys(transactionsByPortfolio).length === 0) {
+      console.log('transactionsByPortfolio boş, manuel olarak çekiliyor...');
+      
+      try {
+        const allTransactions = {};
+        
+        // Fetch transactions from each portfolio's subcollection
+        for (const portfolio of portfolios) {
+          const txSnapshot = await getDocs(collection(db, 'portfolios', portfolio.id, 'transactions'));
+          const txData = txSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          allTransactions[portfolio.id] = txData;
+        }
+        
+        console.log('Manuel olarak çekilen transactions:', allTransactions);
+        setTransactionsByPortfolio(allTransactions);
+        
+        // Now check for bank transactions
+        const bankName = bank?.name || '';
+        Object.entries(allTransactions).forEach(([portfolioId, transactions]) => {
+          const bankTransactions = transactions.filter(tx => {
+            const platform = (tx.platform || '').toString();
+            return platform === bank.id || platform === bankName;
+          });
+          
+          if (bankTransactions.length > 0) {
+            console.log(`Portföy ${portfolioId} için bulunan transaction'lar:`, bankTransactions);
+          }
+        });
+        
+      } catch (error) {
+        console.error('Transactionları çekerken hata:', error);
+      }
+    } else {
+      // Original logic if transactionsByPortfolio is not empty
+      const bankName = bank?.name || '';
+      
+      Object.entries(transactionsByPortfolio).forEach(([portfolioId, transactions]) => {
+        const bankTransactions = transactions.filter(tx => {
+          const platform = (tx.platform || '').toString();
+          return platform === bank.id || platform === bankName;
+        });
+        
+        if (bankTransactions.length > 0) {
+          console.log(`Portföy ${portfolioId} için bulunan transaction'lar:`, bankTransactions);
+        }
+      });
+    }
+    
+    console.log('=== Banka Silme Sheet Debug Tamamlandı ===');
   };
 
   const confirmDeleteBank = async () => {
@@ -1161,8 +1332,22 @@ const Kartlar = () => {
                 Bu işlem geri alınamaz. Banka ve tüm ilişkili veriler kalıcı olarak silinecektir.
               </p>
 
+              {(() => {
+                const holdings = getBankPortfolioHoldings(deletingBank.id);
+                if (holdings.length > 0) {
+                  return (
+                    <div className="alert alert-warning mb-3">
+                      <i className="bi bi-exclamation-triangle me-2"></i>
+                      <strong>Dikkat!</strong> Bu bankada portföy hisseleri bulunmaktadır. 
+                      Banka silindiğinde bu hisseler portföyde kalacak ancak platform bilgisi kaybolacaktır.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               <div className="row g-3">
-                <div className="col-12 col-md-6">
+                <div className="col-12 col-md-4">
                   <div className="card h-100">
                     <div className="card-header bg-success text-white py-2">
                       <strong>Bağlı Hesaplar</strong>
@@ -1183,7 +1368,7 @@ const Kartlar = () => {
                     </div>
                   </div>
                 </div>
-                <div className="col-12 col-md-6">
+                <div className="col-12 col-md-4">
                   <div className="card h-100">
                     <div className="card-header bg-warning py-2">
                       <strong>Kartlar</strong>
@@ -1201,6 +1386,38 @@ const Kartlar = () => {
                       ) : (
                         <div className="text-muted">Kart yok</div>
                       )}
+                    </div>
+                  </div>
+                </div>
+                <div className="col-12 col-md-4">
+                  <div className="card h-100">
+                    <div className="card-header bg-info text-white py-2">
+                      <strong>Portföy Hisseleri</strong>
+                    </div>
+                    <div className="card-body p-2">
+                      {(() => {
+                        const holdings = getBankPortfolioHoldings(deletingBank.id);
+                        return holdings.length > 0 ? (
+                          <ul className="list-group list-group-flush small">
+                            {holdings.map((holding, index) => (
+                              <li key={index} className="list-group-item">
+                                <div className="d-flex justify-content-between align-items-start">
+                                  <div>
+                                    <strong>{holding.symbol}</strong>
+                                    <br />
+                                    <small className="text-muted">{holding.portfolioName}</small>
+                                  </div>
+                                  <div className="text-end">
+                                    <span className="badge bg-primary">{holding.quantity} adet</span>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="text-muted">Hisse yok</div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

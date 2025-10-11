@@ -339,7 +339,7 @@ body.dark-theme .btn-outline-danger {
 .anasayfa-tumehisse .tumhisse-item .hisse-fiyatlar {}
 
 .tumhisse-item {
-  background-color: #f0f0f0;
+  background-color: transparent;
   padding: 15px;
   position: relative;
 }

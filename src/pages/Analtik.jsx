@@ -4,7 +4,7 @@ import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { fetchPriceMapsFromGlobalSheet, fetchRowsFromNamedTab } from '../services/sheetService'
 
 // Basit, bağımsız SVG donut chart
-const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, usdTotal: 0 } }) => {
+const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, usdTotal: 0 }, usdTryTlPrice = 0, fxMap = { usdTry: 0 } }) => {
   const total = data.reduce((s, d) => s + (d.chartValue ?? d.value), 0)
   const radius = (size - thickness) / 2
   const center = size / 2
@@ -39,77 +39,86 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
     } catch (_) { return String(Number(num) || 0) }
   }
 
+  // USD değerlerini TL'ye çeviren helper fonksiyon
+  const convertToTry = (value, currency) => {
+    if (currency === '₺' || currency === 'TRY') return value
+    const usdRate = Number(usdTryTlPrice || 0) > 0 ? Number(usdTryTlPrice) : Number(fxMap.usdTry || 0)
+    return (currency === 'USD' || currency === 'USDT') && usdRate > 0 ? value * usdRate : value
+  }
+
   return (
-    <div ref={containerRef} className="position-relative d-flex flex-column align-items-center">
-      <svg width={size} height={size} role="img" aria-label="Sembol Borsa dağılımı">
-        <circle cx={center} cy={center} r={radius} fill="none" stroke="#e9ecef" strokeWidth={thickness} />
-        <g>
-          {data.map((d, i) => {
-            const arc = mkArc(d.chartValue ?? d.value)
-            return (
-              <path key={d.label}
-                d={arc.d}
-                fill="none"
-                stroke={colors[i % colors.length]}
-                strokeWidth={thickness}
-                strokeLinecap="butt"
-                opacity={activeIdx === null || activeIdx === i ? 1 : 0.35}
-                onMouseEnter={(e) => {
-                  setActiveIdx(i)
-                  setTooltip({
-                    visible: true,
-                    x: e.clientX,
-                    y: e.clientY,
-                    content: (
-                      <div>
-                        <div className="fw-semibold">{d.label}</div>
-                        <div>Mevcut Değer: {fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
-                        <div>Toplam Alım: {fmt(d.cost || 0, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
-                        <div>Kar/Kazanç: {fmt((d.value - (d.cost || 0)), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
-                      </div>
-                    )
-                  })
-                }}
-                onMouseMove={(e) => {
-                  setTooltip(prev => ({ ...prev, x: e.clientX, y: e.clientY }))
-                }}
-                onMouseLeave={() => {
-                  setActiveIdx(null)
-                  setTooltip(prev => ({ ...prev, visible: false }))
-                }}
-                onClick={(e) => {
-                  setActiveIdx(i)
-                  setTooltip({
-                    visible: true,
-                    x: e.clientX,
-                    y: e.clientY,
-                    content: (
-                      <div>
-                        <div className="fw-semibold">{d.label}</div>
-                        <div>Mevcut Değer: {fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
-                        <div>Toplam Alım: {fmt(d.cost || 0, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
-                        <div>Kar/Kazanç: {fmt((d.value - (d.cost || 0)), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
-                      </div>
-                    )
-                  })
-                }}
-              />
-            )
-          })}
-        </g>
-        {/* Center totals: TRY and USD */}
-        <text x={center} y={center - 8} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.8rem' }}>
-          {fmt(totals.tryTotal, '₺')} ₺
-        </text>
-        <text x={center} y={center + 12} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.75rem' }}>
-          {fmt(totals.usdTotal, 'USD')} USD
-        </text>
-        {typeof totals.combinedTry !== 'undefined' && totals.combinedTry !== null && (
-          <text x={center} y={center + 32} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.8rem' }}>
-            {fmt(totals.combinedTry, '₺')} ₺
+    <div ref={containerRef} className="position-relative d-flex align-items-center gap-4">
+      <div className="d-flex flex-column align-items-center">
+        <svg width={size} height={size} role="img" aria-label="Sembol Borsa dağılımı">
+          <circle cx={center} cy={center} r={radius} fill="none" stroke="#e9ecef" strokeWidth={thickness} />
+          <g>
+            {data.map((d, i) => {
+              const arc = mkArc(d.chartValue ?? d.value)
+              return (
+                <path key={d.label}
+                  d={arc.d}
+                  fill="none"
+                  stroke={colors[i % colors.length]}
+                  strokeWidth={thickness}
+                  strokeLinecap="butt"
+                  opacity={activeIdx === null || activeIdx === i ? 1 : 0.35}
+                  onMouseEnter={(e) => {
+                    setActiveIdx(i)
+                    setTooltip({
+                      visible: true,
+                      x: e.clientX,
+                      y: e.clientY,
+                      content: (
+                        <div>
+                          <div className="fw-semibold">{d.label}</div>
+                          <div>Mevcut Değer: {fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                          <div>Toplam Alım: {fmt(d.cost || 0, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                          <div>Kar/Kazanç: {fmt((d.value - (d.cost || 0)), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                        </div>
+                      )
+                    })
+                  }}
+                  onMouseMove={(e) => {
+                    setTooltip(prev => ({ ...prev, x: e.clientX, y: e.clientY }))
+                  }}
+                  onMouseLeave={() => {
+                    setActiveIdx(null)
+                    setTooltip(prev => ({ ...prev, visible: false }))
+                  }}
+                  onClick={(e) => {
+                    setActiveIdx(i)
+                    setTooltip({
+                      visible: true,
+                      x: e.clientX,
+                      y: e.clientY,
+                      content: (
+                        <div>
+                          <div className="fw-semibold">{d.label}</div>
+                          <div>Mevcut Değer: {fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                          <div>Toplam Alım: {fmt(d.cost || 0, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                          <div>Kar/Kazanç: {fmt((d.value - (d.cost || 0)), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                        </div>
+                      )
+                    })
+                  }}
+                />
+              )
+            })}
+          </g>
+          {/* Center totals: TRY and USD */}
+          <text x={center} y={center - 8} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.8rem' }}>
+            {fmt(totals.tryTotal, '₺')} ₺
           </text>
-        )}
-      </svg>
+          <text x={center} y={center + 12} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.75rem' }}>
+            {fmt(totals.usdTotal, 'USD')} USD
+          </text>
+          {typeof totals.combinedTry !== 'undefined' && totals.combinedTry !== null && (
+            <text x={center} y={center + 32} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.8rem' }}>
+              {fmt(totals.combinedTry, '₺')} ₺
+            </text>
+          )}
+        </svg>
+      </div>
       {tooltip.visible && (
         <div
           className="card shadow-sm p-2"
@@ -120,9 +129,9 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
           </div>
         </div>
       )}
-      <div className="mt-3" style={{ maxWidth: size }}>
+      <div className="flex-grow-1">
         {data.map((d, i) => (
-          <div key={d.label} className="d-flex align-items-center justify-content-between small mb-1">
+          <div key={d.label} className="d-flex align-items-center justify-content-between small mb-2">
             <div className="d-flex align-items-center gap-2">
               <span style={{ width: 12, height: 12, background: colors[i % colors.length], display: 'inline-block', borderRadius: 3 }}></span>
               <span className="fw-semibold">{d.label}</span>
@@ -569,7 +578,7 @@ const Analtik = () => {
               <span className="fw-semibold">Sembol Borsa dağılımı (mevcut toplam değer)</span>
             </div>
           </div>
-          <DonutChart data={donutData} totals={totals} />
+          <DonutChart data={donutData} totals={totals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} />
         </div>
       </div>
 
@@ -581,7 +590,7 @@ const Analtik = () => {
               <span className="fw-semibold">Platform para birimi dağılımı</span>
             </div>
           </div>
-          <DonutChart data={platformDonutData} totals={platformTotals} />
+          <DonutChart data={platformDonutData} totals={platformTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} />
         </div>
       </div>
 
@@ -593,7 +602,7 @@ const Analtik = () => {
               <span className="fw-semibold">Hisse dağılımı</span>
             </div>
           </div>
-          <DonutChart data={symbolDonutData} totals={symbolTotals} />
+          <DonutChart data={symbolDonutData} totals={symbolTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} />
         </div>
       </div>
     </div>

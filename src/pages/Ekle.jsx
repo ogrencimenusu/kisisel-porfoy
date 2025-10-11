@@ -3,6 +3,7 @@ import React from 'react'
 const Ekle = ({ onNavigate }) => {
   const items = [
     { id: 'portfoy', title: 'Portföy', icon: 'graph-up' },
+    { id: 'kartlar', title: 'Kartlar', icon: 'credit-card' },
     { id: 'banka', title: 'Banka hesap hareketi', icon: 'bank' },
     { id: 'semboller', title: 'Semboller', icon: 'tag' }
   ]

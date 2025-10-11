@@ -5,7 +5,7 @@ const BottomNav = ({ activeTab, setActiveTab }) => {
     { id: 'anasayfa', label: 'Anasayfa', icon: 'house' },
     { id: 'analtik', label: 'Analtik', icon: 'bar-chart' },
     { id: 'add', label: '+', icon: 'plus', isAdd: true },
-    { id: 'kartlar', label: 'Kartlar', icon: 'credit-card' },
+    { id: 'portfoy', label: 'Portfoy', icon: 'pie-chart' },
     { id: 'ayarlar', label: 'Ayarlar', icon: 'gear' }
   ];
 
