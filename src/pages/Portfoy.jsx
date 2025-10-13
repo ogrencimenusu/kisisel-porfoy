@@ -60,7 +60,7 @@ const Portfoy = ({ onBack }) => {
   const [expandedPortfolios, setExpandedPortfolios] = useState({})
   const [hideZeroHoldings, setHideZeroHoldings] = useState(true)
   const [showSortSheet, setShowSortSheet] = useState(false)
-  const [sortOption, setSortOption] = useState('symbol_asc') // 'symbol_asc' | 'symbol_desc' | 'date_asc' | 'date_desc' | 'quantity_asc' | 'quantity_desc'
+  const [sortOption, setSortOption] = useState('symbol_asc') // 'symbol_asc' | 'symbol_desc' | 'date_asc' | 'date_desc' | 'quantity_asc' | 'quantity_desc' | 'profit_asc' | 'profit_desc'
   const [sheetPrices, setSheetPrices] = useState({})
   
   // Hisse seçimi ve kopyalama/taşıma için state'ler
@@ -1577,6 +1577,30 @@ const Portfoy = ({ onBack }) => {
                     if (so === 'quantity_asc') return entries.sort((a, b) => (a.fifoTotals.adet || 0) - (b.fifoTotals.adet || 0))
                     if (so === 'date_desc') return entries.sort((a, b) => (b.lastDate?.getTime?.() || 0) - (a.lastDate?.getTime?.() || 0))
                     if (so === 'date_asc') return entries.sort((a, b) => (a.lastDate?.getTime?.() || 0) - (b.lastDate?.getTime?.() || 0))
+                    if (so === 'profit_desc') {
+                      return entries.sort((a, b) => {
+                        // Kazanç hesaplama
+                        const aCurrentPrice = sheetPrices[(a.symbol || '').toUpperCase()]
+                        const bCurrentPrice = sheetPrices[(b.symbol || '').toUpperCase()]
+                        const aCurrentValue = aCurrentPrice && a.fifoTotals.adet > 0 ? parseNumber(aCurrentPrice) * a.fifoTotals.adet : 0
+                        const bCurrentValue = bCurrentPrice && b.fifoTotals.adet > 0 ? parseNumber(bCurrentPrice) * b.fifoTotals.adet : 0
+                        const aProfit = aCurrentValue - a.fifoTotals.maaliyet
+                        const bProfit = bCurrentValue - b.fifoTotals.maaliyet
+                        return bProfit - aProfit
+                      })
+                    }
+                    if (so === 'profit_asc') {
+                      return entries.sort((a, b) => {
+                        // Kazanç hesaplama
+                        const aCurrentPrice = sheetPrices[(a.symbol || '').toUpperCase()]
+                        const bCurrentPrice = sheetPrices[(b.symbol || '').toUpperCase()]
+                        const aCurrentValue = aCurrentPrice && a.fifoTotals.adet > 0 ? parseNumber(aCurrentPrice) * a.fifoTotals.adet : 0
+                        const bCurrentValue = bCurrentPrice && b.fifoTotals.adet > 0 ? parseNumber(bCurrentPrice) * b.fifoTotals.adet : 0
+                        const aProfit = aCurrentValue - a.fifoTotals.maaliyet
+                        const bProfit = bCurrentValue - b.fifoTotals.maaliyet
+                        return aProfit - bProfit
+                      })
+                    }
                     return entries.sort((a, b) => a.symbol.localeCompare(b.symbol))
                   })()
 
@@ -1597,7 +1621,90 @@ const Portfoy = ({ onBack }) => {
                     const currentValue = hasCurrentPrice && fifoTotals.adet > 0 ? currentPriceNum * fifoTotals.adet : null
                     // İşlemleri tarih sırasına göre gezip her işlem sonrası kalan adedi hesapla
                     const txSortedWithRemaining = (() => {
-                      const sorted = [...list].sort((a, b) => getTxDate(a) - getTxDate(b))
+                      // Portföy sıralamasına göre işlemleri sırala
+                      const so = (sortOption || 'symbol_asc').toString()
+                      const sorted = [...list].sort((a, b) => {
+                        if (so === 'date_desc') return getTxDate(b) - getTxDate(a)
+                        if (so === 'date_asc') return getTxDate(a) - getTxDate(b)
+                        if (so === 'symbol_desc') {
+                          // Sembol adına göre sırala, sonra tarih
+                          const symbolA = symbolsData.find(s => s.id === a.sembol)?.name || a.sembol || ''
+                          const symbolB = symbolsData.find(s => s.id === b.sembol)?.name || b.sembol || ''
+                          const symbolCompare = symbolB.localeCompare(symbolA)
+                          return symbolCompare !== 0 ? symbolCompare : getTxDate(a) - getTxDate(b)
+                        }
+                        if (so === 'symbol_asc') {
+                          // Sembol adına göre sırala, sonra tarih
+                          const symbolA = symbolsData.find(s => s.id === a.sembol)?.name || a.sembol || ''
+                          const symbolB = symbolsData.find(s => s.id === b.sembol)?.name || b.sembol || ''
+                          const symbolCompare = symbolA.localeCompare(symbolB)
+                          return symbolCompare !== 0 ? symbolCompare : getTxDate(a) - getTxDate(b)
+                        }
+                        if (so === 'type_desc') {
+                          // Borsa tipine göre sırala, sonra tarih
+                          const typeCompare = (b.sembolBorsa || '').localeCompare(a.sembolBorsa || '')
+                          return typeCompare !== 0 ? typeCompare : getTxDate(a) - getTxDate(b)
+                        }
+                        if (so === 'type_asc') {
+                          // Borsa tipine göre sırala, sonra tarih
+                          const typeCompare = (a.sembolBorsa || '').localeCompare(b.sembolBorsa || '')
+                          return typeCompare !== 0 ? typeCompare : getTxDate(a) - getTxDate(b)
+                        }
+                        if (so === 'quantity_desc') {
+                          // Adet miktarına göre sırala, sonra tarih
+                          const qtyA = Number(parseNumber(a.adet) || 0)
+                          const qtyB = Number(parseNumber(b.adet) || 0)
+                          const qtyCompare = qtyB - qtyA
+                          return qtyCompare !== 0 ? qtyCompare : getTxDate(a) - getTxDate(b)
+                        }
+                        if (so === 'quantity_asc') {
+                          // Adet miktarına göre sırala, sonra tarih
+                          const qtyA = Number(parseNumber(a.adet) || 0)
+                          const qtyB = Number(parseNumber(b.adet) || 0)
+                          const qtyCompare = qtyA - qtyB
+                          return qtyCompare !== 0 ? qtyCompare : getTxDate(a) - getTxDate(b)
+                        }
+                        if (so === 'profit_desc') {
+                          // Kazanca göre sırala (sadece Alış işlemleri için)
+                          if (a.durum === 'Alış' && b.durum === 'Alış') {
+                            const symbolUpper = (a.sembol || '').toString().toUpperCase()
+                            const currentPriceRaw = sheetPrices[symbolUpper]
+                            const currentPriceNum = parseNumber(currentPriceRaw)
+                            const hasCurrentPrice = typeof currentPriceRaw !== 'undefined' && currentPriceRaw !== null && String(currentPriceRaw).trim() !== '' && !isNaN(currentPriceNum)
+                            
+                            if (hasCurrentPrice) {
+                              const aCurrentValue = currentPriceNum * (parseNumber(a.adet) || 0)
+                              const bCurrentValue = currentPriceNum * (parseNumber(b.adet) || 0)
+                              const aProfit = aCurrentValue - (parseNumber(a.maaliyet) || 0)
+                              const bProfit = bCurrentValue - (parseNumber(b.maaliyet) || 0)
+                              const profitCompare = bProfit - aProfit
+                              return profitCompare !== 0 ? profitCompare : getTxDate(a) - getTxDate(b)
+                            }
+                          }
+                          return getTxDate(a) - getTxDate(b)
+                        }
+                        if (so === 'profit_asc') {
+                          // Kazanca göre sırala (sadece Alış işlemleri için)
+                          if (a.durum === 'Alış' && b.durum === 'Alış') {
+                            const symbolUpper = (a.sembol || '').toString().toUpperCase()
+                            const currentPriceRaw = sheetPrices[symbolUpper]
+                            const currentPriceNum = parseNumber(currentPriceRaw)
+                            const hasCurrentPrice = typeof currentPriceRaw !== 'undefined' && currentPriceRaw !== null && String(currentPriceRaw).trim() !== '' && !isNaN(currentPriceNum)
+                            
+                            if (hasCurrentPrice) {
+                              const aCurrentValue = currentPriceNum * (parseNumber(a.adet) || 0)
+                              const bCurrentValue = currentPriceNum * (parseNumber(b.adet) || 0)
+                              const aProfit = aCurrentValue - (parseNumber(a.maaliyet) || 0)
+                              const bProfit = bCurrentValue - (parseNumber(b.maaliyet) || 0)
+                              const profitCompare = aProfit - bProfit
+                              return profitCompare !== 0 ? profitCompare : getTxDate(a) - getTxDate(b)
+                            }
+                          }
+                          return getTxDate(a) - getTxDate(b)
+                        }
+                        // Varsayılan olarak tarih sırasına göre sırala
+                        return getTxDate(a) - getTxDate(b)
+                      })
                       let remaining = 0
                       return sorted.map(t => {
                         const qty = Number(parseNumber(t.adet) || 0)
@@ -1795,7 +1902,30 @@ const Portfoy = ({ onBack }) => {
                                     )}
                                     </span>
                                     
-                                    <div>Maaliyet: {formatNumber(tx.maaliyet, tx.birim)} {tx.birim} </div>
+                                    <div>
+                                      Maaliyet: {formatNumber(tx.maaliyet, tx.birim)} {tx.birim}
+                                      {tx.durum === 'Alış' && (() => {
+                                        const symbolUpper = (tx.sembol || '').toString().toUpperCase()
+                                        const currentPriceRaw = sheetPrices[symbolUpper]
+                                        const currentPriceNum = parseNumber(currentPriceRaw)
+                                        const hasCurrentPrice = typeof currentPriceRaw !== 'undefined' && currentPriceRaw !== null && String(currentPriceRaw).trim() !== '' && !isNaN(currentPriceNum)
+                                        
+                                        if (hasCurrentPrice) {
+                                          const buyPrice = parseNumber(tx.fiyat) || 0
+                                          const currentValue = currentPriceNum * (parseNumber(tx.adet) || 0)
+                                          const costValue = parseNumber(tx.maaliyet) || 0
+                                          const profitLoss = currentValue - costValue
+                                          const profitLossPercent = costValue > 0 ? (profitLoss / costValue) * 100 : 0
+                                          
+                                          return (
+                                            <span className={`ms-2 ${profitLoss >= 0 ? 'text-success' : 'text-danger'}`}>
+                                              ({profitLoss >= 0 ? '+' : ''}{profitLossPercent.toFixed(2)}% / {profitLoss >= 0 ? '+' : ''}{formatNumber(profitLoss, tx.birim)} {tx.birim})
+                                            </span>
+                                          )
+                                        }
+                                        return null
+                                      })()}
+                                    </div>
                                   </div>
                                   <div className="d-flex align-items-center gap-3">
                                     <div className="text-end">
@@ -2608,6 +2738,22 @@ const Portfoy = ({ onBack }) => {
                       setShowSortSheet(false)
                       try { await saveUiPrefs({ portfolioSortOption: 'quantity_asc' }) } catch (_) {}
                     }}>0 → 9</button>
+                  </div>
+                </div>
+
+                <div className="list-group-item fw-semibold d-flex align-items-center justify-content-between mt-2">
+                  <span>Kazanca göre</span>
+                  <div className="btn-group">
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('profit_desc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'profit_desc' }) } catch (_) {}
+                    }}>Yüksek → Düşük</button>
+                    <button className="btn btn-sm btn-outline-secondary" onClick={async () => {
+                      setSortOption('profit_asc')
+                      setShowSortSheet(false)
+                      try { await saveUiPrefs({ portfolioSortOption: 'profit_asc' }) } catch (_) {}
+                    }}>Düşük → Yüksek</button>
                   </div>
                 </div>
               </div>
