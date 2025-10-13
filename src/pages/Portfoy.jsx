@@ -507,9 +507,18 @@ const Portfoy = ({ onBack }) => {
     try {
       const hasCurrency = !!currency
       const options = hasCurrency 
-        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }
-        : { maximumFractionDigits: 6, useGrouping: false }
+        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
+        : { maximumFractionDigits: 6, useGrouping: true }
       return new Intl.NumberFormat(locale, options).format(isNaN(num) ? 0 : num)
+    } catch (_) {
+      return String(isNaN(num) ? 0 : num)
+    }
+  }
+
+  const formatTLMoney = (value) => {
+    const num = typeof value === 'number' ? value : parseNumber(value)
+    try {
+      return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }).format(isNaN(num) ? 0 : num)
     } catch (_) {
       return String(isNaN(num) ? 0 : num)
     }
@@ -1327,10 +1336,10 @@ const Portfoy = ({ onBack }) => {
                   return (
                     <div className="small border-top pt-2 border-bottom pb-2 px-4">
                       <div>
-                      ₺ Güncel: {formatNumber(s.current['₺'] || 0, '₺')}  {s.base['₺'] > 0 ? <span className={((s.current['₺'] - s.base['₺']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['₺'] - s.base['₺']) / s.base['₺']) * 100).toFixed(2)}%)</span> : null}
+                      ₺ Güncel: {formatTLMoney(s.current['₺'] || 0)} ₺ {s.base['₺'] > 0 ? <span className={((s.current['₺'] - s.base['₺']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['₺'] - s.base['₺']) / s.base['₺']) * 100).toFixed(2)}%)</span> : null}
                       </div>
                       <div>
-                        $ Güncel: {formatNumber(s.current['USD'] || 0, 'USD')}  {s.base['USD'] > 0 ? <span className={((s.current['USD'] - s.base['USD']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['USD'] - s.base['USD']) / s.base['USD']) * 100).toFixed(2)}%)</span> : null}
+                        $ Güncel: {formatNumber(s.current['USD'] || 0, 'USD')} USD {s.base['USD'] > 0 ? <span className={((s.current['USD'] - s.base['USD']) >= 0) ? 'text-success' : 'text-danger'}>({(((s.current['USD'] - s.base['USD']) / s.base['USD']) * 100).toFixed(2)}%)</span> : null}
                       </div>
                       {(() => {
                         try {
@@ -1357,7 +1366,7 @@ const Portfoy = ({ onBack }) => {
                           if (tlPart > 0 || (usdPart > 0 && usdTry > 0)) {
                             return (
                               <div>
-                                Toplam (₺): {formatNumber(totalTl, '₺')}
+                                Toplam (₺): {formatTLMoney(totalTl)} ₺
                               </div>
                             )
                           }
@@ -1437,89 +1446,118 @@ const Portfoy = ({ onBack }) => {
               {Array.isArray(transactionsByPortfolio[p.id]) && transactionsByPortfolio[p.id].length > 0 ? (
                 (() => {
                   const grouped = transactionsByPortfolio[p.id].reduce((acc, tx) => {
-                    // Sembol ID'sini sembol adına çevir
-                    const getSymbolNameById = (symbolId) => {
-                      const symbol = symbolsData.find(s => s.id === symbolId)
-                      return symbol ? (symbol.name || symbol.id) : symbolId
-                    }
-                    const key = getSymbolNameById(tx.sembol) || '—'
+                    // Gruplamayı sembol ID'sine göre yap (aynı isimli farklı ID'ler karışmasın)
+                    const key = (tx.sembol || '—')
                     acc[key] = acc[key] || []
                     acc[key].push(tx)
                     return acc
                   }, {})
                   // FIFO hesaplaması
+                  const getTxDate = (t) => {
+                    try {
+                      if (t.tarih instanceof Date) return t.tarih
+                      if (t.tarih?.toDate) return t.tarih.toDate()
+                      const s = (t.tarih || '').toString().trim()
+                      // dd.MM.yyyy formatını parse et
+                      const m = s.match(/^([0-3]?\d)\.([01]?\d)\.(\d{4})$/)
+                      if (m) {
+                        const dd = parseInt(m[1], 10)
+                        const mm = parseInt(m[2], 10) - 1
+                        const yyyy = parseInt(m[3], 10)
+                        return new Date(yyyy, mm, dd)
+                      }
+                      const d = new Date(s)
+                      if (!isNaN(d.getTime())) return d
+                    } catch (_) {}
+                    return new Date(0)
+                  }
                   const calculateFIFO = (transactions, symbol) => {
                       // Tarihe göre sırala (en eski önce)
-                      const sortedTx = [...transactions].sort((a, b) => {
-                        const dateA = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
-                        const dateB = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
-                        return dateA - dateB
-                      })
+                      const sortedTx = [...transactions].sort((a, b) => getTxDate(a) - getTxDate(b))
                       
                       let toplamAlisMaaliyet = 0
                       let toplamSatisGelir = 0
                       const alislar = []
                       
+                      let remainingAdet = 0
+                      let remainingMaaliyet = 0
+                      const buys = []
                       for (const tx of sortedTx) {
-                        const adet = parseNumber(tx.adet) || 0
-                        const maaliyet = parseNumber(tx.maaliyet) || 0
-                        const birimFiyat = adet > 0 ? maaliyet / adet : 0
-                        
-                        if (tx.durum === 'Alış') {
-                          alislar.push({
-                            adet: adet,
-                            maaliyet: maaliyet,
-                            birimFiyat: birimFiyat,
-                            tarih: tx.tarih
-                          })
+                        const adet = Number(parseNumber(tx.adet) || 0)
+                        const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
+                        const birimFiyat = adet > 0 ? (maaliyet / adet) : 0
+                        if ((tx.durum || '') === 'Alış') {
+                          buys.push({ adet, birimFiyat })
+                          remainingAdet += adet
+                          remainingMaaliyet += maaliyet
                           toplamAlisMaaliyet += maaliyet
-                        } else if (tx.durum === 'Satış') {
-                          let satisAdet = adet
-                          
-                          // FIFO ile satış yap
-                          while (satisAdet > 0 && alislar.length > 0) {
-                            const alis = alislar[0]
-                            const kullanilacakAdet = Math.min(satisAdet, alis.adet)
-                            
-                            alis.adet -= kullanilacakAdet
-                            alis.maaliyet -= kullanilacakAdet * alis.birimFiyat
-                            satisAdet -= kullanilacakAdet
-                            
-                            if (alis.adet <= 0) {
-                              alislar.shift() // Boş alışı kaldır
-                            }
+                        } else if ((tx.durum || '') === 'Satış') {
+                          let sellLeft = adet
+                          let sellCost = 0
+                          while (sellLeft > 0 && buys.length > 0) {
+                            const b = buys[0]
+                            const use = Math.min(sellLeft, b.adet)
+                            sellCost += use * b.birimFiyat
+                            b.adet -= use
+                            sellLeft -= use
+                            if (b.adet <= 0) buys.shift()
                           }
-                          
-                          toplamSatisGelir += maaliyet // Satış geliri
+                          remainingAdet -= adet
+                          remainingMaaliyet -= sellCost
+                          toplamSatisGelir += maaliyet
                         }
                       }
                       
-                      // Kalan adet ve maaliyet hesaplama
-                      let remainingAdet = 0
-                      let remainingMaaliyet = 0
-                      
-                      for (const alis of alislar) {
-                        remainingAdet += alis.adet
-                        remainingMaaliyet += alis.maaliyet
-                      }
-                      
-                      // Kar/Zarar hesaplama (tamamen satılmış veya neredeyse satılmış olanlar için)
-                      const karZarar = Math.abs(remainingAdet) < 0.0001 ? toplamSatisGelir - toplamAlisMaaliyet : 0
-                      const karZararYuzde = toplamAlisMaaliyet > 0 ? (karZarar / toplamAlisMaaliyet) * 100 : 0
-                      
+                      // Kar/Zarar hesaplama ve tam çıkışta değerleri sıfırlama
+                      const exited = Math.abs(remainingAdet) < 0.0001
+                      const karZarar = exited ? (toplamSatisGelir - toplamAlisMaaliyet) : 0
+                      const karZararYuzde = exited ? 0 : (toplamAlisMaaliyet > 0 ? (karZarar / toplamAlisMaaliyet) * 100 : 0)
 
                       return {
-                        adet: remainingAdet,
-                        maaliyet: remainingMaaliyet,
-                        karZarar: karZarar,
-                        karZararYuzde: karZararYuzde,
+                        adet: exited ? 0 : remainingAdet,
+                        maaliyet: exited ? 0 : remainingMaaliyet,
+                        karZarar,
+                        karZararYuzde,
                         toplamAlisMaaliyet: toplamAlisMaaliyet,
                         toplamSatisGelir: toplamSatisGelir
                       }
                     }
 
+                  const approxEq = (a, b) => {
+                    const na = Number(String(a || '').toString().replace(/,/g, '.'))
+                    const nb = Number(String(b || '').toString().replace(/,/g, '.'))
+                    if (isNaN(na) || isNaN(nb)) return String(a) === String(b)
+                    return Math.abs(na - nb) < 1e-9
+                  }
+                  const normalizeDateString = (t) => {
+                    const d = getTxDate({ tarih: t })
+                    return d && d.toISOString ? d.toISOString().slice(0,10) : String(t || '')
+                  }
+                  const dedupeTransactions = (arr) => {
+                    const seen = new Set()
+                    const out = []
+                    for (const tx of arr) {
+                      const keyParts = [
+                        (tx.durum || ''),
+                        (tx.birim || ''),
+                        normalizeDateString(tx.tarih)
+                      ]
+                      const k = keyParts.join('|')
+                      // Further numeric approximate check for adet, fiyat, maaliyet
+                      const exists = out.find(o => (
+                        (o.durum || '') === (tx.durum || '') &&
+                        (o.birim || '') === (tx.birim || '') &&
+                        normalizeDateString(o.tarih) === normalizeDateString(tx.tarih) &&
+                        approxEq(o.adet, tx.adet) &&
+                        approxEq(o.fiyat, tx.fiyat) &&
+                        approxEq(o.maaliyet, tx.maaliyet)
+                      ))
+                      if (!exists) out.push(tx)
+                    }
+                    return out
+                  }
                   const entries = Object.keys(grouped).map(symbol => {
-                    const list = grouped[symbol]
+                    const list = dedupeTransactions(grouped[symbol])
                     const fifoTotals = calculateFIFO(list, symbol)
                     const lastDate = list.reduce((max, tx) => {
                       const d = tx.tarih instanceof Date ? tx.tarih : (tx.tarih?.toDate?.() || new Date(0))
@@ -1557,6 +1595,17 @@ const Portfoy = ({ onBack }) => {
                     const currentPriceNum = parseNumber(currentPriceRaw)
                     const hasCurrentPrice = typeof currentPriceRaw !== 'undefined' && currentPriceRaw !== null && String(currentPriceRaw).trim() !== '' && !isNaN(currentPriceNum)
                     const currentValue = hasCurrentPrice && fifoTotals.adet > 0 ? currentPriceNum * fifoTotals.adet : null
+                    // İşlemleri tarih sırasına göre gezip her işlem sonrası kalan adedi hesapla
+                    const txSortedWithRemaining = (() => {
+                      const sorted = [...list].sort((a, b) => getTxDate(a) - getTxDate(b))
+                      let remaining = 0
+                      return sorted.map(t => {
+                        const qty = Number(parseNumber(t.adet) || 0)
+                        if ((t.durum || '') === 'Alış') remaining += qty
+                        else if ((t.durum || '') === 'Satış') remaining -= qty
+                        return { tx: t, remainingAfter: remaining }
+                      })
+                    })()
                     const unrealizedPnL = currentValue !== null ? (currentValue - fifoTotals.maaliyet) : null
                     const unrealizedPnLPct = (currentValue !== null && fifoTotals.maaliyet > 0) ? ((unrealizedPnL / fifoTotals.maaliyet) * 100) : null
                     if (hideZeroHoldings && fifoTotals.adet <= 0) return null
@@ -1603,7 +1652,10 @@ const Portfoy = ({ onBack }) => {
                                 })()}
                               </div>
                               <span className="fw-semibold">
-                              {symbol} 
+                              {(() => {
+                                const sym = symbolsData.find(s => s.id === symbol)
+                                return sym ? (sym.name || sym.id) : symbol
+                              })()} 
                               <br />
                               <span className='' style={{fontSize: '0.8rem'}}>
                               {(() => {
@@ -1661,7 +1713,7 @@ const Portfoy = ({ onBack }) => {
                         {isOpen && (
                           <div className="list-group list-group-flush">
 
-                            <div className='d-flex flex-row  gap-1 p-1' style={{fontSize: '0.8rem'}}> 
+                            <div className='d-flex flex-column gap-1 p-1' style={{fontSize: '0.8rem'}}> 
                             <span className="text-small d-block font-weight-normal" >
                               {fifoTotals.adet > 0 ? 'Kalan Adet ' : 'Toplam Adet '}: {formatAdet(fifoTotals.adet)} 
                               </span>
@@ -1679,9 +1731,52 @@ const Portfoy = ({ onBack }) => {
                               })()}
 
                               </span>
+                              {(() => {
+                                // Banka bazlı kalan adet dökümü
+                                const groupedByPlatform = list.reduce((acc, tx) => {
+                                  acc[tx.platform] = acc[tx.platform] || []
+                                  acc[tx.platform].push(tx)
+                                  return acc
+                                }, {})
+                                const bankNameById = (id) => {
+                                  const b = banks.find(x => x.id === id)
+                                  return b ? (b.name || id) : id
+                                }
+                                const lines = Object.keys(groupedByPlatform).map(pid => {
+                                  const txs = groupedByPlatform[pid]
+                                  // FIFO for this bank
+                                  const sorted = [...txs].sort((a, b) => getTxDate(a) - getTxDate(b))
+                                  let rem = 0
+                                  const buys = []
+                                  sorted.forEach(tx => {
+                                    const adet = Number(parseNumber(tx.adet) || 0)
+                                    const mali = Number(parseNumber(tx.maaliyet) || 0)
+                                    const bf = adet > 0 ? (mali / adet) : 0
+                                    if ((tx.durum || '') === 'Alış') { buys.push({ adet, bf }); rem += adet }
+                                    else if ((tx.durum || '') === 'Satış') {
+                                      let s = adet
+                                      while (s > 0 && buys.length > 0) {
+                                        const b = buys[0]
+                                        const use = Math.min(s, b.adet)
+                                        b.adet -= use
+                                        s -= use
+                                        if (b.adet <= 0) buys.shift()
+                                      }
+                                      rem -= adet
+                                    }
+                                  })
+                                  if (Math.abs(rem) < 1e-6) rem = 0
+                                  if (rem <= 0) return null
+                                  return `${bankNameById(pid)} ${formatAdet(rem)} adet`
+                                }).filter(Boolean)
+                                if (lines.length === 0) return null
+                                return (
+                                  <span className="text-small d-block font-weight-normal">- Bankalar: {lines.join(', ')}</span>
+                                )
+                              })()}
                             </div>
 
-                            {list.map((tx, index) => (
+                            {txSortedWithRemaining.map(({ tx, remainingAfter }, index) => (
                               <div key={`${tx.id}-${index}`} className="list-group-item bg-transparent d-flex align-items-center justify-content-between" >
                                 <div className="d-flex align-items-center justify-content-between w-100">
                                   <div className="d-flex flex-column">
@@ -1692,7 +1787,13 @@ const Portfoy = ({ onBack }) => {
                                         if (desiredStr) return desiredStr
                                         return <>{formatNumber(tx.fiyat, tx.birim)} {tx.birim}</>
                                       })()}
-                                    </small></span>
+                                    </small>
+                                    {tx.durum === 'Satış' ? (
+                                      <small className="text-body-secondary ms-1"> - Kalan adet {formatAdet(remainingAfter)}</small>
+                                    ) : (
+                                      <small className="text-body-secondary ms-1"> - Eldeki adet {formatAdet(remainingAfter)}</small>
+                                    )}
+                                    </span>
                                     
                                     <div>Maaliyet: {formatNumber(tx.maaliyet, tx.birim)} {tx.birim} </div>
                                   </div>
@@ -2145,7 +2246,7 @@ const Portfoy = ({ onBack }) => {
                 <div className="col-12 col-md-6">
                   <label className="form-label">Fiyat</label>
                   <div className="input-group">
-                    <input type="text" inputMode="decimal" className="form-control" value={formatNumberTurkish(formData.fiyat)} onChange={(e) => handleChange('fiyat', e.target.value)} placeholder={(formData.birim === 'TRY' || formData.birim === '₺') ? 'Örn: 36,07173' : 'e.g. 36.07173'} />
+                    <input type="text" inputMode="decimal" className="form-control" value={formData.fiyat} onChange={(e) => handleChange('fiyat', e.target.value)} placeholder={(formData.birim === 'TRY' || formData.birim === '₺') ? 'Örn: 36,07173' : 'e.g. 36.07173'} />
                     <span className="input-group-text">
                       {getCurrencySymbol(formData.birim)}
                     </span>
@@ -2154,7 +2255,7 @@ const Portfoy = ({ onBack }) => {
                 <div className="col-12 col-md-6">
                   <label className="form-label">Komisyon</label>
                   <div className="input-group">
-                    <input type="text" inputMode="decimal" className="form-control" value={formatNumberTurkish(formData.komisyon)} onChange={(e) => handleChange('komisyon', e.target.value)} placeholder={(formData.birim === 'TRY' || formData.birim === '₺') ? 'Örn: 0,25' : 'e.g. 0.25'} />
+                    <input type="text" inputMode="decimal" className="form-control" value={formData.komisyon} onChange={(e) => handleChange('komisyon', e.target.value)} placeholder={(formData.birim === 'TRY' || formData.birim === '₺') ? 'Örn: 0,25' : 'e.g. 0.25'} />
                     <span className="input-group-text">
                       {getCurrencySymbol(formData.birim)}
                     </span>

@@ -302,6 +302,50 @@ const Analtik = () => {
     load()
   }, [])
 
+  // Yardımcılar: tarih parse, tekilleştirme
+  const getTxDate = (t) => {
+    try {
+      if (t.tarih instanceof Date) return t.tarih
+      if (t.tarih?.toDate) return t.tarih.toDate()
+      const s = (t.tarih || '').toString().trim()
+      const m = s.match(/^([0-3]?\d)\.([01]?\d)\.(\d{4})$/)
+      if (m) {
+        const dd = parseInt(m[1], 10)
+        const mm = parseInt(m[2], 10) - 1
+        const yyyy = parseInt(m[3], 10)
+        return new Date(yyyy, mm, dd)
+      }
+      const d = new Date(s)
+      if (!isNaN(d.getTime())) return d
+    } catch (_) {}
+    return new Date(0)
+  }
+  const approxEq = (a, b) => {
+    const na = Number(String(a || '').toString().replace(/,/g, '.'))
+    const nb = Number(String(b || '').toString().replace(/,/g, '.'))
+    if (isNaN(na) || isNaN(nb)) return String(a) === String(b)
+    return Math.abs(na - nb) < 1e-9
+  }
+  const normalizeDateString = (t) => {
+    const d = getTxDate({ tarih: t })
+    return d && d.toISOString ? d.toISOString().slice(0,10) : String(t || '')
+  }
+  const dedupeTransactions = (arr) => {
+    const out = []
+    for (const tx of arr) {
+      const exists = out.find(o => (
+        (o.durum || '') === (tx.durum || '') &&
+        (o.birim || '') === (tx.birim || '') &&
+        normalizeDateString(o.tarih) === normalizeDateString(tx.tarih) &&
+        approxEq(o.adet, tx.adet) &&
+        approxEq(o.fiyat, tx.fiyat) &&
+        approxEq(o.maaliyet, tx.maaliyet)
+      ))
+      if (!exists) out.push(tx)
+    }
+    return out
+  }
+
   // Her sembol için kalan adet hesabı (FIFO) ve ilgili sembolBorsa'yı kullanır
   const donutData = useMemo(() => {
     const hiddenPortfolioIds = new Set((portfolios || []).filter(p => !!p.hideFromHomeAndAnalytics).map(p => p.id))
@@ -319,12 +363,8 @@ const Analtik = () => {
     }, {})
     const marketAgg = {}
     Object.keys(bySymbol).forEach((symbolKey) => {
-      const txs = bySymbol[symbolKey]
-      const sorted = [...txs].sort((a, b) => {
-        const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
-        const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
-        return da - db
-      })
+      const txs = dedupeTransactions(bySymbol[symbolKey])
+      const sorted = [...txs].sort((a, b) => getTxDate(a) - getTxDate(b))
       let remainingAdet = 0
       let remainingCost = 0
       const buys = []
@@ -349,6 +389,8 @@ const Analtik = () => {
           remainingAdet -= adet
         }
       })
+      // Tolerans: çok küçük kalıntıları 0 say
+      if (Math.abs(remainingAdet) < 1e-6) { remainingAdet = 0; remainingCost = 0 }
       const market = (txs[0]?.sembolBorsa || 'Diğer').toString()
       if (remainingAdet > 0) {
         const symbolIdUpper = (symbolKey || '').toString().toUpperCase()
@@ -417,12 +459,8 @@ const Analtik = () => {
     Object.keys(byPlatformSymbol).forEach((platformId) => {
       const bySymbol = byPlatformSymbol[platformId]
       Object.keys(bySymbol).forEach((symbolKey) => {
-        const txs = bySymbol[symbolKey]
-        const sorted = [...txs].sort((a, b) => {
-          const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
-          const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
-          return da - db
-        })
+        const txs = dedupeTransactions(bySymbol[symbolKey])
+        const sorted = [...txs].sort((a, b) => getTxDate(a) - getTxDate(b))
         let remainingAdet = 0
         let remainingCost = 0
         const buys = []
@@ -447,6 +485,8 @@ const Analtik = () => {
             remainingAdet -= adet
           }
         })
+        // Tolerans: çok küçük kalıntıları 0 say
+        if (Math.abs(remainingAdet) < 1e-6) { remainingAdet = 0; remainingCost = 0 }
         if (remainingAdet > 0) {
           const symbolIdUpper = (symbolKey || '').toString().toUpperCase()
           const priceRaw = priceMap.get ? priceMap.get(symbolIdUpper) : undefined
@@ -504,12 +544,8 @@ const Analtik = () => {
     }, {})
     const entries = []
     Object.keys(bySymbol).forEach((symbolKey) => {
-      const txs = bySymbol[symbolKey]
-      const sorted = [...txs].sort((a, b) => {
-        const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
-        const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
-        return da - db
-      })
+      const txs = dedupeTransactions(bySymbol[symbolKey])
+      const sorted = [...txs].sort((a, b) => getTxDate(a) - getTxDate(b))
       let remainingAdet = 0
       let remainingCost = 0
       const buys = []
@@ -534,6 +570,8 @@ const Analtik = () => {
           remainingAdet -= adet
         }
       })
+      // Tolerans: çok küçük kalıntıları 0 say
+      if (Math.abs(remainingAdet) < 1e-6) { remainingAdet = 0; remainingCost = 0 }
       if (remainingAdet > 0) {
         const symbolIdUpper = (symbolKey || '').toString().toUpperCase()
         const curRaw = currencyMap.get ? currencyMap.get(symbolIdUpper) : undefined

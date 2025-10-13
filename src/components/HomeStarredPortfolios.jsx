@@ -1,6 +1,6 @@
 import React from 'react'
 
-const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsData, expandedStarred, setExpandedStarred, getDesiredPriceNum, formatNumber, usdRate = 0 }) => {
+const HomeStarredPortfolios = ({ banks = [], portfolios, transactionsByPortfolio, symbolsData, expandedStarred, setExpandedStarred, getDesiredPriceNum, formatNumber, usdRate = 0 }) => {
   const parseNumber = (val) => {
     if (typeof val === 'number') return isNaN(val) ? 0 : val
     if (!val) return 0
@@ -46,6 +46,13 @@ const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsDat
       }
     })
     return { remainingAdet: Number(remainingAdet || 0), remainingMaaliyet: Number(remainingMaaliyet || 0) }
+  }
+
+  const getBankNameByIdOrRaw = (platform) => {
+    const byId = banks.find(b => b.id === platform)
+    if (byId) return byId.name || byId.id
+    const byName = banks.find(b => (b.name || '').toLowerCase() === String(platform || '').toLowerCase())
+    return byName ? (byName.name || byName.id) : (platform || '')
   }
 
   const getSymbolNameById = (symbolId) => {
@@ -225,6 +232,18 @@ const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsDat
                     const baseVal = Number(fifo.remainingMaaliyet || 0)
                     const pnl = currentValue - baseVal
                     const pct = baseVal > 0 ? (pnl / baseVal) * 100 : 0
+                    // Banka bazlı adet dökümü
+                    const byBank = list.reduce((acc, tx) => {
+                      acc[tx.platform] = acc[tx.platform] || []
+                      acc[tx.platform].push(tx)
+                      return acc
+                    }, {})
+                    const perBankText = Object.keys(byBank).map(pid => {
+                      const fifoBank = calcFifoRemaining(byBank[pid])
+                      if ((fifoBank.remainingAdet || 0) <= 0) return null
+                      const name = getBankNameByIdOrRaw(pid)
+                      return `${name} ${formatNumber(fifoBank.remainingAdet)} adet`
+                    }).filter(Boolean).join(', ')
                     return (
                       <div key={symId} className="list-group-item bg-transparent d-flex align-items-center justify-content-between">
                         <div className="d-flex align-items-center gap-2">
@@ -242,7 +261,7 @@ const HomeStarredPortfolios = ({ portfolios, transactionsByPortfolio, symbolsDat
                           })()}
                           <div className="d-flex flex-column">
                             <span className="fw-semibold">{symbolName}</span>
-                            <small className="text-body-secondary">Kalan: {formatNumber(fifo.remainingAdet)} adet</small>
+                            <small className="text-body-secondary">Kalan: {formatNumber(fifo.remainingAdet)} adet{perBankText ? ` (${perBankText})` : ''}</small>
                           </div>
                         </div>
                         <div className="text-end small">

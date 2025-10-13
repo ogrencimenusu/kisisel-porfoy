@@ -1,5 +1,31 @@
 import React from 'react'
 
+// desiredSample'a göre fiyatı istenen formata dönüştür (ör: 0,00000$ gibi)
+const desiredTransformString = (rawValue, desiredSample, cur) => {
+  if (!desiredSample) return null
+  const desired = (desiredSample || '').toString()
+  const desiredDigits = (desired.match(/\d/g) || []).length
+  if (desiredDigits <= 0) return null
+  const sepChar = ','
+  const firstDot = desired.indexOf('.')
+  const firstComma = desired.indexOf(',')
+  const idxSep = (firstDot >= 0 || firstComma >= 0) ? (firstDot >= 0 ? firstDot : firstComma) : -1
+  const digitsBeforeSep = idxSep >= 0 ? (desired.slice(0, idxSep).match(/\d/g) || []).length : desiredDigits
+  const rawDigitsOnly = (String(rawValue).match(/\d/g) || []).join('')
+  if (!rawDigitsOnly) return null
+  let take = rawDigitsOnly
+  if (take.length > desiredDigits) take = take.slice(0, desiredDigits)
+  if (take.length < desiredDigits) take = take.padEnd(desiredDigits, '0')
+  const intPart = take.slice(0, Math.max(0, Math.min(digitsBeforeSep, take.length)))
+  const fracPart = take.slice(Math.max(0, Math.min(digitsBeforeSep, take.length)))
+  const formatted = fracPart.length > 0 ? `${intPart}${sepChar}${fracPart}` : intPart
+  const c = (cur || '').toUpperCase()
+  if (c === 'TRY' || c === '₺') return `${formatted}₺`
+  if (c === 'USD') return `${formatted}$`
+  if (c === 'EUR') return `${formatted}€`
+  return formatted
+}
+
 const HomeAllHoldings = ({ allHoldings, symbolsData, formatNumber }) => {
   if (!allHoldings || allHoldings.length === 0) return null
   return (
@@ -25,7 +51,13 @@ const HomeAllHoldings = ({ allHoldings, symbolsData, formatNumber }) => {
                   <i className="bi bi-tag" style={{ fontSize: '1rem' }}></i>
                 )}
                 <div className="tumhisse-bilgiler">
-                <div className='tumhisse-guncel'>{formatNumber(currentNum, cur)} {cur}</div>
+                <div className='tumhisse-guncel'>
+                  {(() => {
+                    const desiredStr = desiredTransformString(currentNum, symbolCfg?.desiredSample, cur)
+                    if (desiredStr) return desiredStr
+                    return `${formatNumber(currentNum, cur)} ${cur}`
+                  })()}
+                </div>
                   <span className="tumhisse-isim">{symbolName}</span>
                   <span className="tumhisse-adet">{(totalQty)}</span>
                   <span className="tumhisse-fiyat">{formatNumber(currentValue, cur)} {cur}</span>

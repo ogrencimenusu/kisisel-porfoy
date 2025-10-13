@@ -187,13 +187,50 @@ const Anasayfa = () => {
       byPlatformSymbol[platformId][symbolId].push(tx)
     })
 
+    const approxEq = (a, b) => {
+      const na = Number(String(a || '').toString().replace(/,/g, '.'))
+      const nb = Number(String(b || '').toString().replace(/,/g, '.'))
+      if (isNaN(na) || isNaN(nb)) return String(a) === String(b)
+      return Math.abs(na - nb) < 1e-9
+    }
+    const getTxDate = (t) => {
+      try {
+        if (t.tarih instanceof Date) return t.tarih
+        if (t.tarih?.toDate) return t.tarih.toDate()
+        const s = (t.tarih || '').toString().trim()
+        const m = s.match(/^([0-3]?\d)\.([01]?\d)\.(\d{4})$/)
+        if (m) {
+          const dd = parseInt(m[1], 10)
+          const mm = parseInt(m[2], 10) - 1
+          const yyyy = parseInt(m[3], 10)
+          return new Date(yyyy, mm, dd)
+        }
+        const d = new Date(s)
+        if (!isNaN(d.getTime())) return d
+      } catch (_) {}
+      return new Date(0)
+    }
+    const normalizeDateString = (t) => {
+      const d = getTxDate({ tarih: t })
+      return d && d.toISOString ? d.toISOString().slice(0,10) : String(t || '')
+    }
+    const dedupeTransactions = (arr) => {
+      const out = []
+      for (const tx of arr) {
+        const exists = out.find(o => (
+          (o.durum || '') === (tx.durum || '') &&
+          (o.birim || '') === (tx.birim || '') &&
+          normalizeDateString(o.tarih) === normalizeDateString(tx.tarih) &&
+          approxEq(o.adet, tx.adet) &&
+          approxEq(o.fiyat, tx.fiyat) &&
+          approxEq(o.maaliyet, tx.maaliyet)
+        ))
+        if (!exists) out.push(tx)
+      }
+      return out
+    }
     const calcFifoForList = (list) => {
-      // Sort by date ascending
-      const sorted = [...list].sort((a, b) => {
-        const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
-        const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
-        return da - db
-      })
+      const sorted = dedupeTransactions(list).sort((a, b) => getTxDate(a) - getTxDate(b))
       let remainingAdet = 0
       let remainingMaaliyet = 0
       const buys = []
@@ -269,13 +306,50 @@ const Anasayfa = () => {
 
   const platformIds = Object.keys(platformTotals)
 
+  const getTxDate = (t) => {
+    try {
+      if (t.tarih instanceof Date) return t.tarih
+      if (t.tarih?.toDate) return t.tarih.toDate()
+      const s = (t.tarih || '').toString().trim()
+      const m = s.match(/^([0-3]?\d)\.([01]?\d)\.(\d{4})$/)
+      if (m) {
+        const dd = parseInt(m[1], 10)
+        const mm = parseInt(m[2], 10) - 1
+        const yyyy = parseInt(m[3], 10)
+        return new Date(yyyy, mm, dd)
+      }
+      const d = new Date(s)
+      if (!isNaN(d.getTime())) return d
+    } catch (_) {}
+    return new Date(0)
+  }
+  const approxEqGlobal = (a, b) => {
+    const na = Number(String(a || '').toString().replace(/,/g, '.'))
+    const nb = Number(String(b || '').toString().replace(/,/g, '.'))
+    if (isNaN(na) || isNaN(nb)) return String(a) === String(b)
+    return Math.abs(na - nb) < 1e-9
+  }
+  const normalizeDateStringGlobal = (t) => {
+    const d = getTxDate({ tarih: t })
+    return d && d.toISOString ? d.toISOString().slice(0,10) : String(t || '')
+  }
+  const dedupeTransactionsGlobal = (arr) => {
+    const out = []
+    for (const tx of arr) {
+      const exists = out.find(o => (
+        (o.durum || '') === (tx.durum || '') &&
+        (o.birim || '') === (tx.birim || '') &&
+        normalizeDateStringGlobal(o.tarih) === normalizeDateStringGlobal(tx.tarih) &&
+        approxEqGlobal(o.adet, tx.adet) &&
+        approxEqGlobal(o.fiyat, tx.fiyat) &&
+        approxEqGlobal(o.maaliyet, tx.maaliyet)
+      ))
+      if (!exists) out.push(tx)
+    }
+    return out
+  }
   const calcFifoRemaining = (list) => {
-    // Sort by date ascending
-    const sorted = [...list].sort((a, b) => {
-      const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
-      const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
-      return da - db
-    })
+    const sorted = dedupeTransactionsGlobal(list).sort((a, b) => getTxDate(a) - getTxDate(b))
     let remainingAdet = 0
     let remainingMaaliyet = 0
     const buys = []
@@ -367,6 +441,7 @@ const Anasayfa = () => {
         onShowBankHoldings={setShowBankHoldings}
       />
       <HomeStarredPortfolios
+        banks={banks}
         portfolios={portfolios}
         transactionsByPortfolio={transactionsByPortfolio}
         symbolsData={symbolsData}
@@ -477,13 +552,9 @@ const Anasayfa = () => {
                   return acc
                 }, {})
 
-                // Calculate FIFO for each symbol
+                // Calculate FIFO for each symbol (with dedupe, robust date parse, tolerance)
                 const calcFifoRemaining = (list) => {
-                  const sorted = [...list].sort((a, b) => {
-                    const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
-                    const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
-                    return da - db
-                  })
+                  const sorted = dedupeTransactionsGlobal(list).sort((a, b) => getTxDate(a) - getTxDate(b))
                   let remainingAdet = 0
                   let remainingMaaliyet = 0
                   const buys = []
@@ -491,11 +562,11 @@ const Anasayfa = () => {
                     const adet = Number(parseNumber(tx.adet) || 0)
                     const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
                     const birimFiyat = adet > 0 ? (maaliyet / adet) : 0
-                    if (tx.durum === 'Alış') {
+                    if ((tx.durum || '') === 'Alış') {
                       buys.push({ adet, birimFiyat })
                       remainingAdet += adet
                       remainingMaaliyet += maaliyet
-                    } else if (tx.durum === 'Satış') {
+                    } else if ((tx.durum || '') === 'Satış') {
                       let sellLeft = adet
                       let sellCost = 0
                       while (sellLeft > 0 && buys.length > 0) {
@@ -510,23 +581,32 @@ const Anasayfa = () => {
                       remainingMaaliyet -= sellCost
                     }
                   })
+                  // Tolerance: treat very small residuals as zero
+                  if (Math.abs(remainingAdet) < 1e-6) {
+                    remainingAdet = 0
+                    remainingMaaliyet = 0
+                  }
                   return { remainingAdet: Number(remainingAdet || 0), remainingMaaliyet: Number(remainingMaaliyet || 0) }
                 }
 
                 const entries = Object.keys(grouped).map(symbolKey => {
                   const list = grouped[symbolKey]
                   const fifo = calcFifoRemaining(list)
+                  const fifoAdj = {
+                    remainingAdet: Math.abs(fifo.remainingAdet) < 1e-6 ? 0 : fifo.remainingAdet,
+                    remainingMaaliyet: Math.abs(fifo.remainingAdet) < 1e-6 ? 0 : fifo.remainingMaaliyet
+                  }
                   const birim = list[0]?.birim
                   const symbolName = (() => {
                     const symbol = symbolsData.find(s => s.id === symbolKey)
                     return symbol ? (symbol.name || symbol.id) : symbolKey
                   })()
                   const currentPrice = getDesiredPriceNum((symbolKey || '').toString().toUpperCase())
-                  const currentValue = currentPrice > 0 ? currentPrice * fifo.remainingAdet : 0
-                  const unrealizedPnL = currentValue - fifo.remainingMaaliyet
-                  const unrealizedPnLPct = fifo.remainingMaaliyet > 0 ? (unrealizedPnL / fifo.remainingMaaliyet) * 100 : 0
+                  const currentValue = currentPrice > 0 ? currentPrice * fifoAdj.remainingAdet : 0
+                  const unrealizedPnL = currentValue - fifoAdj.remainingMaaliyet
+                  const unrealizedPnLPct = fifoAdj.remainingMaaliyet > 0 ? (unrealizedPnL / fifoAdj.remainingMaaliyet) * 100 : 0
                   
-                  return { symbol: symbolKey, symbolName, list, fifo, birim, currentPrice, currentValue, unrealizedPnL, unrealizedPnLPct }
+                  return { symbol: symbolKey, symbolName, list, fifo: fifoAdj, birim, currentPrice, currentValue, unrealizedPnL, unrealizedPnLPct }
                 }).filter(e => hideZeroBankHoldings ? e.fifo.remainingAdet > 0 : true).sort((a, b) => a.symbolName.localeCompare(b.symbolName))
 
                 return (
@@ -562,7 +642,12 @@ const Anasayfa = () => {
                                   {symbolName}
                                   <br />
                                   <span className='' style={{fontSize: '0.8rem'}}>
-                                    {currentPrice ? formatNumber(currentPrice, birim) : '—'} {birim}
+                                    {(() => {
+                                      const symCfg = symbolsData.find(s => s.id === symbol)
+                                      const desiredStr = symCfg?.desiredSample ? desiredTransformString(currentPrice, symCfg.desiredSample, birim) : null
+                                      if (desiredStr) return desiredStr
+                                      return `${currentPrice ? formatNumber(currentPrice, birim) : '—'} ${birim}`
+                                    })()}
                                   </span>
                                 </span>
                               </div>
