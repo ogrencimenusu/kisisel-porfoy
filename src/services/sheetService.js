@@ -143,6 +143,7 @@ export const fetchRowsFromNamedTab = async (tabName) => {
 export const buildSymbolMaps = (rows) => {
   const priceBySymbol = new Map()
   const currencyBySymbol = new Map()
+  const percentageBySymbol = new Map()
   rows.forEach(cols => {
     if (!cols || cols.length < 2) return
     const key = (cols[0] || '').toString().trim().toUpperCase()
@@ -168,12 +169,16 @@ export const buildSymbolMaps = (rows) => {
         if (/\d/.test(token)) { val = token; break }
       }
     }
+    // Get percentage from 4th column (GÜNLÜK YÜZDE KAZANÇ)
+    const percentage = cols.length > 3 ? (cols[3] || '').toString().trim() : ''
+    
     if (key) {
       if (typeof val !== 'undefined') priceBySymbol.set(key, val)
       if (cur) currencyBySymbol.set(key, cur)
+      if (percentage) percentageBySymbol.set(key, percentage)
     }
   })
-  return { priceBySymbol, currencyBySymbol }
+  return { priceBySymbol, currencyBySymbol, percentageBySymbol }
 }
 
 export const fetchPriceMapsFromGlobalSheet = async () => {
@@ -181,7 +186,7 @@ export const fetchPriceMapsFromGlobalSheet = async () => {
   if (!url) {
     url = getGlobalSheetUrl()
     if (!url) {
-      return { priceBySymbol: new Map(), currencyBySymbol: new Map() }
+      return { priceBySymbol: new Map(), currencyBySymbol: new Map(), percentageBySymbol: new Map() }
     }
   } else {
     

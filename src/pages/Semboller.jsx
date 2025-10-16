@@ -12,6 +12,7 @@ const Semboller = ({ onBack }) => {
   const [prices, setPrices] = useState({})
   const [loadingPrices, setLoadingPrices] = useState({})
   const [currencies, setCurrencies] = useState({})
+  const [percentages, setPercentages] = useState({})
   const [sheetTestResult, setSheetTestResult] = useState('')
   const [sheetTesting, setSheetTesting] = useState(false)
   const [symbolConfig, setSymbolConfig] = useState({
@@ -339,16 +340,19 @@ const Semboller = ({ onBack }) => {
       const loadingState = {}
       symbols.forEach(s => { loadingState[s.id] = true })
       setLoadingPrices(prev => ({ ...prev, ...loadingState }))
-      const { priceBySymbol, currencyBySymbol } = await fetchPriceMapsFromGlobalSheet()
+      const { priceBySymbol, currencyBySymbol, percentageBySymbol } = await fetchPriceMapsFromGlobalSheet()
       // Update all listed symbols
       const newPrices = {}
       const newCurrencies = {}
+      const newPercentages = {}
       symbols.forEach(s => {
         const key = (s.id || '').toUpperCase()
         const val = priceBySymbol.get(key)
         const cur = currencyBySymbol.get(key)
+        const pct = percentageBySymbol.get(key)
         if (typeof val !== 'undefined') newPrices[s.id] = val
         if (typeof cur !== 'undefined') newCurrencies[s.id] = cur
+        if (typeof pct !== 'undefined') newPercentages[s.id] = pct
       })
       // Apply optional per-symbol transform based on desiredSample
       const applyTransform = (rawValue, cfg, cur) => {
@@ -381,6 +385,7 @@ const Semboller = ({ onBack }) => {
       })
       setPrices(prev => ({ ...prev, ...newPrices }))
       setCurrencies(prev => ({ ...prev, ...newCurrencies }))
+      setPercentages(prev => ({ ...prev, ...newPercentages }))
     } catch (e) {
       console.error('Global sheet fetch error:', e)
     } finally {
@@ -471,12 +476,27 @@ const Semboller = ({ onBack }) => {
                     <small className={`fw-semibold ${prices[symbol.id] === 'Hata' || prices[symbol.id] === 'Bulunamadı' ? 'text-danger' : 'text-success'}`}>
                       {(() => {
                         const cur = (currencies[symbol.id] || '').toUpperCase()
-                        if (cur === 'TRY') return <i className="bi bi-currency-lira me-1"></i>
-                        if (cur === 'EUR') return <i className="bi bi-currency-euro me-1"></i>
-                        if (cur === 'GBP') return <i className="bi bi-currency-pound me-1"></i>
-                        if (cur === 'USD' || cur === 'USDT') return null // Avoid double $ when value already includes $
-                        return <i className="bi bi-currency-dollar me-1"></i>
-                      })()}{prices[symbol.id]}
+                        const pct = percentages[symbol.id]
+                        const pctNum = pct ? parseFloat(pct.toString().replace(/,/g, '.')) : null
+                        const hasPct = pctNum !== null && !isNaN(pctNum)
+                        
+                        return (
+                          <>
+                            {cur === 'TRY' && <i className="bi bi-currency-lira me-1"></i>}
+                            {cur === 'EUR' && <i className="bi bi-currency-euro me-1"></i>}
+                            {cur === 'GBP' && <i className="bi bi-currency-pound me-1"></i>}
+                            {(cur !== 'USD' && cur !== 'USDT' && cur !== 'TRY' && cur !== 'EUR' && cur !== 'GBP') && <i className="bi bi-currency-dollar me-1"></i>}
+                            <span className={hasPct ? (pctNum < 0 ? 'text-danger' : 'text-success') : ''}>
+                              {prices[symbol.id]}
+                            </span>
+                            {hasPct && (
+                              <span className={`ms-2 ${pctNum < 0 ? 'text-danger' : 'text-success'}`}>
+                                ({pctNum >= 0 ? '+' : ''}{pctNum.toFixed(2)}%)
+                              </span>
+                            )}
+                          </>
+                        )
+                      })()}
                     </small>
                   ) : (
                     <small className="text-muted">

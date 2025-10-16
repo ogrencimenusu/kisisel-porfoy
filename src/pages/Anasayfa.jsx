@@ -13,6 +13,7 @@ const Anasayfa = () => {
   const [tlPrices, setTlPrices] = useState({ USD: '', EUR: '', GBP: '' })
   const [priceBySymbol, setPriceBySymbol] = useState(new Map())
   const [currencyBySymbol, setCurrencyBySymbol] = useState(new Map())
+  const [percentageBySymbol, setPercentageBySymbol] = useState(new Map())
   const [showConvertedTlByPlatform, setShowConvertedTlByPlatform] = useState({})
   const [symbolsData, setSymbolsData] = useState([])
   const [expandedStarred, setExpandedStarred] = useState({})
@@ -104,12 +105,14 @@ const Anasayfa = () => {
   useEffect(() => {
     const loadPrices = async () => {
       try {
-        const { priceBySymbol, currencyBySymbol } = await fetchPriceMapsFromGlobalSheet()
+        const { priceBySymbol, currencyBySymbol, percentageBySymbol } = await fetchPriceMapsFromGlobalSheet()
         setPriceBySymbol(priceBySymbol)
         setCurrencyBySymbol(currencyBySymbol)
+        setPercentageBySymbol(percentageBySymbol)
       } catch (_) {
         setPriceBySymbol(new Map())
         setCurrencyBySymbol(new Map())
+        setPercentageBySymbol(new Map())
       }
     }
     loadPrices()
@@ -450,12 +453,14 @@ const Anasayfa = () => {
         getDesiredPriceNum={getDesiredPriceNum}
         formatNumber={formatNumber}
         usdRate={parseNumber(tlPrices.USD)}
+        percentageBySymbol={percentageBySymbol}
       />
       
       <HomeAllHoldings
         allHoldings={allHoldings}
         symbolsData={symbolsData}
         formatNumber={formatNumber}
+        percentageBySymbol={percentageBySymbol}
       />
 
       {/* Bank Holdings Modal */}
@@ -645,8 +650,22 @@ const Anasayfa = () => {
                                     {(() => {
                                       const symCfg = symbolsData.find(s => s.id === symbol)
                                       const desiredStr = symCfg?.desiredSample ? desiredTransformString(currentPrice, symCfg.desiredSample, birim) : null
-                                      if (desiredStr) return desiredStr
-                                      return `${currentPrice ? formatNumber(currentPrice, birim) : '—'} ${birim}`
+                                      const percentage = percentageBySymbol.get((symbol || '').toUpperCase())
+                                      const percentageNum = percentage ? parseNumber(percentage) : null
+                                      const hasPercentage = percentageNum !== null && !isNaN(percentageNum)
+                                      
+                                      return (
+                                        <>
+                                          <span className={hasPercentage ? (percentageNum < 0 ? 'text-danger' : 'text-success') : ''}>
+                                            {desiredStr ? desiredStr : `${currentPrice ? formatNumber(currentPrice, birim) : '—'} ${birim}`}
+                                          </span>
+                                          {hasPercentage && (
+                                            <span className={`ms-2 ${percentageNum < 0 ? 'text-danger' : 'text-success'}`}>
+                                              ({percentageNum >= 0 ? '+' : ''}{percentageNum.toFixed(2)}%)
+                                            </span>
+                                          )}
+                                        </>
+                                      )
                                     })()}
                                   </span>
                                 </span>

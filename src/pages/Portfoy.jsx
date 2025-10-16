@@ -62,6 +62,7 @@ const Portfoy = ({ onBack }) => {
   const [showSortSheet, setShowSortSheet] = useState(false)
   const [sortOption, setSortOption] = useState('symbol_asc') // 'symbol_asc' | 'symbol_desc' | 'date_asc' | 'date_desc' | 'quantity_asc' | 'quantity_desc' | 'profit_asc' | 'profit_desc'
   const [sheetPrices, setSheetPrices] = useState({})
+  const [sheetPercentages, setSheetPercentages] = useState({})
   
   // Hisse seçimi ve kopyalama/taşıma için state'ler
   const [selectedHoldings, setSelectedHoldings] = useState({}) // {portfolioId: {symbol: true/false}}
@@ -148,9 +149,11 @@ const Portfoy = ({ onBack }) => {
         console.log('[Sheet] semboI_fiyat fetched', { rows: rawPriceRows?.length || 0 })
       } catch (_) {}
 
-      const { priceBySymbol, currencyBySymbol } = await fetchPriceMapsFromGlobalSheet()
+      const { priceBySymbol, currencyBySymbol, percentageBySymbol } = await fetchPriceMapsFromGlobalSheet()
       const obj = {}
       priceBySymbol.forEach((v, k) => { obj[k] = v })
+      const percentageObj = {}
+      percentageBySymbol.forEach((v, k) => { percentageObj[k] = v })
       // Apply desiredSample transform
       const applyDesiredTransform = (rawValue, desiredSample, cur) => {
         if (!desiredSample) return rawValue
@@ -189,6 +192,7 @@ const Portfoy = ({ onBack }) => {
       // Debug logs for fetched data
       try { /* no-op debug removed */ } catch (_) {}
       setSheetPrices(obj)
+      setSheetPercentages(percentageObj)
     } catch (e) {
       /* silent */
     }
@@ -1767,8 +1771,24 @@ const Portfoy = ({ onBack }) => {
                               <span className='' style={{fontSize: '0.8rem'}}>
                               {(() => {
                                 const val = sheetPrices[(symbol || '').toUpperCase()]
-                                return val ? val : '—'
-                              })()} {birim}
+                                const percentage = sheetPercentages[(symbol || '').toUpperCase()]
+                                const percentageNum = percentage ? parseNumber(percentage) : null
+                                const hasPercentage = percentageNum !== null && !isNaN(percentageNum)
+                                
+                                return (
+                                  <>
+                                    <span className={hasPercentage ? (percentageNum < 0 ? 'text-danger' : 'text-success') : ''}>
+                                      {val ? val : '—'}
+                                    </span>
+                                    {' '}{birim}
+                                    {hasPercentage && (
+                                      <span className={`ms-2 ${percentageNum < 0 ? 'text-danger' : 'text-success'}`}>
+                                        ({percentageNum >= 0 ? '+' : ''}{percentageNum.toFixed(2)}%)
+                                      </span>
+                                    )}
+                                  </>
+                                )
+                              })()}
                               <span className="small text-body-secondary ms-2">
                                   ({formatAdet(fifoTotals.adet)} adet)
                                 </span>

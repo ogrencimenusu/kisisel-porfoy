@@ -149,6 +149,7 @@ const Analtik = () => {
   const [transactionsByPortfolio, setTransactionsByPortfolio] = useState({})
   const [priceMap, setPriceMap] = useState(new Map())
   const [currencyMap, setCurrencyMap] = useState(new Map())
+  const [percentageMap, setPercentageMap] = useState(new Map())
   const [fxMap, setFxMap] = useState({ usdTry: 0 })
   const [usdTryTlPrice, setUsdTryTlPrice] = useState(0)
   const [banks, setBanks] = useState([])
@@ -250,9 +251,10 @@ const Analtik = () => {
 
   const refreshPrices = async () => {
     try {
-      const { priceBySymbol, currencyBySymbol } = await fetchPriceMapsFromGlobalSheet()
+      const { priceBySymbol, currencyBySymbol, percentageBySymbol } = await fetchPriceMapsFromGlobalSheet()
       setPriceMap(priceBySymbol)
       setCurrencyMap(currencyBySymbol)
+      setPercentageMap(percentageBySymbol)
       // USD/TRY kuru aynı sheet'te sembol anahtarı olarak olabilir; yaygın anahtarları deneyelim
       const tryKeys = ['USDTRY', 'USD/TRY', 'USD-TRY', 'USD TL', 'USD TL KURU', 'USDTTRY', 'DOLAR']
       const invKeys = ['TRYUSD', 'TRY/USD', 'TRY-USD', 'TLUSD', 'TL/USD', 'TL-USD']
@@ -275,6 +277,7 @@ const Analtik = () => {
     } catch (_) {
       setPriceMap(new Map())
       setCurrencyMap(new Map())
+      setPercentageMap(new Map())
       setFxMap({ usdTry: 0 })
     }
   }

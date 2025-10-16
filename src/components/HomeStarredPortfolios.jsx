@@ -1,6 +1,6 @@
 import React from 'react'
 
-const HomeStarredPortfolios = ({ banks = [], portfolios, transactionsByPortfolio, symbolsData, expandedStarred, setExpandedStarred, getDesiredPriceNum, formatNumber, usdRate = 0 }) => {
+const HomeStarredPortfolios = ({ banks = [], portfolios, transactionsByPortfolio, symbolsData, expandedStarred, setExpandedStarred, getDesiredPriceNum, formatNumber, usdRate = 0, percentageBySymbol = new Map() }) => {
   const parseNumber = (val) => {
     if (typeof val === 'number') return isNaN(val) ? 0 : val
     if (!val) return 0
@@ -227,11 +227,15 @@ const HomeStarredPortfolios = ({ banks = [], portfolios, transactionsByPortfolio
                   {entries.map(({ symId, list, fifo }) => {
                     const birim = list[0]?.birim
                     const symbolName = getSymbolNameById(symId)
-                    const currentNum = Number(getDesiredPriceNum((symId || '').toString().toUpperCase()) || 0)
+                    const symKeyUpper = (symId || '').toString().toUpperCase()
+                    const currentNum = Number(getDesiredPriceNum(symKeyUpper) || 0)
                     const currentValue = currentNum > 0 ? Number(fifo.remainingAdet || 0) * currentNum : 0
                     const baseVal = Number(fifo.remainingMaaliyet || 0)
                     const pnl = currentValue - baseVal
                     const pct = baseVal > 0 ? (pnl / baseVal) * 100 : 0
+                    const dailyPctRaw = percentageBySymbol.get ? percentageBySymbol.get(symKeyUpper) : undefined
+                    const dailyPctNum = dailyPctRaw != null ? parseNumber(dailyPctRaw) : null
+                    const hasDaily = dailyPctNum !== null && !isNaN(dailyPctNum)
                     // Banka bazlı adet dökümü
                     const byBank = list.reduce((acc, tx) => {
                       acc[tx.platform] = acc[tx.platform] || []
@@ -260,14 +264,31 @@ const HomeStarredPortfolios = ({ banks = [], portfolios, transactionsByPortfolio
                             return <i className="bi bi-tag" style={{ fontSize: '1rem' }}></i>
                           })()}
                           <div className="d-flex flex-column">
-                            <span className="fw-semibold">{symbolName}</span>
+                            <span className="fw-semibold">
+                              {symbolName}{' '}
+                              {currentNum > 0 && (
+                                <>
+                                  <span className={hasDaily ? (dailyPctNum < 0 ? 'text-danger' : 'text-success') : ''}>
+                                    {formatNumber(currentNum, birim)} {birim}
+                                  </span>
+                                  {hasDaily && (
+                                    <span className={`ms-1 ${dailyPctNum < 0 ? 'text-danger' : 'text-success'}`}>
+                                      ({dailyPctNum >= 0 ? '+' : ''}{Number(dailyPctNum).toFixed(2)}%)
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </span>
                             <small className="text-body-secondary">Kalan: {formatNumber(fifo.remainingAdet)} adet{perBankText ? ` (${perBankText})` : ''}</small>
                           </div>
                         </div>
                         <div className="text-end small">
                           {currentValue > 0 ? (
                             <>
-                              Güncel değer: {formatNumber(currentValue, birim)} {birim}
+                              Güncel değer: <span >
+                                {formatNumber(currentValue, birim)} {birim}
+                              </span>
+                             
                               <div className={`${pnl > 0 ? 'text-success' : (pnl < 0 ? 'text-danger' : 'text-body-secondary')}`}>
                                 {formatNumber(Math.abs(pnl), birim)} {birim} ({pnl >= 0 ? '+' : ''}{Number(pct).toFixed(2)}%)
                               </div>

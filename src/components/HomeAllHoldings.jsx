@@ -26,7 +26,7 @@ const desiredTransformString = (rawValue, desiredSample, cur) => {
   return formatted
 }
 
-const HomeAllHoldings = ({ allHoldings, symbolsData, formatNumber }) => {
+const HomeAllHoldings = ({ allHoldings, symbolsData, formatNumber, percentageBySymbol = new Map() }) => {
   if (!allHoldings || allHoldings.length === 0) return null
   return (
     <div className="anasayfa-tumehisse">
@@ -40,6 +40,9 @@ const HomeAllHoldings = ({ allHoldings, symbolsData, formatNumber }) => {
           const gain = Number(currentValue - totalCost)
           const pct = totalCost > 0 ? (gain / totalCost) * 100 : 0
           const gainCls = gain > 0 ? 'text-success' : (gain < 0 ? 'text-danger' : 'text-body-secondary')
+          const dailyPctRaw = percentageBySymbol.get ? percentageBySymbol.get((symId || '').toString().toUpperCase()) : undefined
+          const dailyPctNum = dailyPctRaw != null ? parseFloat(String(dailyPctRaw).replace(/\./g, '').replace(/,/g, '.')) : null
+          const hasDaily = dailyPctNum != null && !isNaN(dailyPctNum)
           return (
             <div key={symId} className="tumhisse-item">
               <div className="tumhisse-bilgiler-wrap">
@@ -54,8 +57,18 @@ const HomeAllHoldings = ({ allHoldings, symbolsData, formatNumber }) => {
                 <div className='tumhisse-guncel'>
                   {(() => {
                     const desiredStr = desiredTransformString(currentNum, symbolCfg?.desiredSample, cur)
-                    if (desiredStr) return desiredStr
-                    return `${formatNumber(currentNum, cur)} ${cur}`
+                    return (
+                      <>
+                        <span className={hasDaily ? (dailyPctNum < 0 ? 'text-danger' : 'text-success') : ''}>
+                          {desiredStr ? desiredStr : `${formatNumber(currentNum, cur)} ${cur}`}
+                        </span>
+                        {hasDaily && (
+                          <span className={`ms-2 ${dailyPctNum < 0 ? 'text-danger' : 'text-success'}`}>
+                            ({dailyPctNum >= 0 ? '+' : ''}{Number(dailyPctNum).toFixed(2)}%)
+                          </span>
+                        )}
+                      </>
+                    )
                   })()}
                 </div>
                   <span className="tumhisse-isim">{symbolName}</span>
