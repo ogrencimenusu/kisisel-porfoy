@@ -30,6 +30,7 @@ const HomeAllHoldings = ({ allHoldings, symbolsData, formatNumber, percentageByS
   if (!allHoldings || allHoldings.length === 0) return null
   return (
     <div className="anasayfa-tumehisse">
+      <h5 className="mb-2 d-flex align-items-center gap-2"><i className="bi bi-list-ul"></i> Tüm Hisseler</h5>
       <div className="tumhisse-wrap">
         {allHoldings.map(({ symId, fifo, cur, currentNum, currentValue }) => {
           const symbolCfg = symbolsData.find(s => s.id === symId)
@@ -72,7 +73,7 @@ const HomeAllHoldings = ({ allHoldings, symbolsData, formatNumber, percentageByS
                   })()}
                 </div>
                   <span className="tumhisse-isim">{symbolName}</span>
-                  <span className="tumhisse-adet">{(totalQty)}</span>
+                  <span className="tumhisse-adet">{formatNumber(totalQty)}</span>
                   <span className="tumhisse-fiyat">{formatNumber(currentValue, cur)} {cur}</span>
                   <div className={`tumhisse-kazanc small ${gainCls}`}> {formatNumber(Math.abs(gain), cur)} {cur} ({gain >= 0 ? '+' : ''}{Number(pct).toFixed(2)}%)</div>
                   </div>

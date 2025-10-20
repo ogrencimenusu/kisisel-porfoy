@@ -271,7 +271,6 @@ body.dark-theme .btn-outline-danger {
   display: flex
   ;
       overflow-y: hidden;
-      margin-top: 30px;
       margin-bottom: 30px;
 }
 .anasayfa-portfoy .portfoy-wrap {
@@ -322,7 +321,7 @@ body.dark-theme .btn-outline-danger {
 .anasayfa-portfoy .portfoy-wrap .price .price-currency .guncel {  }
 .anasayfa-portfoy .portfoy-wrap .price .price-kazanc { font-size: 10px;  }
 
-.anasayfa-tumehisse{}
+.anasayfa-tumehisse{ margin-bottom: 40px;}
 .anasayfa-tumehisse .tumhisse-wrap {
   
   display: grid
@@ -380,10 +379,13 @@ body.dark-theme .btn-outline-danger {
   margin-top: 12px;
 }
 .anasayfa-tumehisse .tumhisse-bilgiler .tumhisse-guncel{
-  font-size: 14px;
-    position: absolute;
-    top: 21px;
-    left: 41px;
+  font-size: 10px;
+  position: absolute;
+  top: 21px;
+  left: 41px;
+  display: flex;
+  justify-content: space-between;
+  width: calc(100% - 47px);
 }
 
   .anasayfa-tumehisse .tumhisse-bilgiler .tumhisse-isim{ 

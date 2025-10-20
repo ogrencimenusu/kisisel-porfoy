@@ -384,9 +384,8 @@ const Anasayfa = () => {
 
   const allHoldings = useMemo(() => {
     try {
-      const hiddenPortfolioIds = new Set((portfolios || []).filter(p => !!p.hideFromHomeAndAnalytics).map(p => p.id))
+      // Anasayfa tüm hisse listesinde, hideFromHomeAndAnalytics işaretli portföyler de dahil edilmelidir
       const allTx = Object.entries(transactionsByPortfolio)
-        .filter(([pid]) => !hiddenPortfolioIds.has(pid))
         .map(([, list]) => list)
         .flat()
       if (!Array.isArray(allTx) || allTx.length === 0) return []
@@ -428,7 +427,8 @@ const Anasayfa = () => {
         </div>
       </div>
       */}  
-      <div className="anasayfa-giris">
+      <div className="anasayfa-giris mt-5">
+      <h5 className="mb-2 d-flex align-items-center gap-2"><i className="bi bi-building"></i> Platformlar</h5>
 
       </div>
       <HomePlatformCards
@@ -443,6 +443,8 @@ const Anasayfa = () => {
         getDesiredPriceNum={getDesiredPriceNum}
         onShowBankHoldings={setShowBankHoldings}
       />
+            <h5 className="mb-2 mt-5 d-flex align-items-center gap-2"><i className="bi bi-building"></i> Platformlar</h5>
+
       <HomeStarredPortfolios
         banks={banks}
         portfolios={portfolios}

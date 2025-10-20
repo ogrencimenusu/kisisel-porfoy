@@ -4,7 +4,7 @@ import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { fetchPriceMapsFromGlobalSheet, fetchRowsFromNamedTab } from '../services/sheetService'
 
 // Basit, bağımsız SVG donut chart
-const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, usdTotal: 0 }, usdTryTlPrice = 0, fxMap = { usdTry: 0 } }) => {
+const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, usdTotal: 0 }, usdTryTlPrice = 0, fxMap = { usdTry: 0 }, labelMode = 'text' }) => {
   const total = data.reduce((s, d) => s + (d.chartValue ?? d.value), 0)
   const radius = (size - thickness) / 2
   const center = size / 2
@@ -12,13 +12,14 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
   const mkArc = (value) => {
     const start = (cumulative / total) * 2 * Math.PI
     const end = ((cumulative + value) / total) * 2 * Math.PI
+    const mid = (start + end) / 2
     cumulative += value
     const largeArc = end - start > Math.PI ? 1 : 0
     const x0 = center + radius * Math.cos(start)
     const y0 = center + radius * Math.sin(start)
     const x1 = center + radius * Math.cos(end)
     const y1 = center + radius * Math.sin(end)
-    return { d: `M ${x0} ${y0} A ${radius} ${radius} 0 ${largeArc} 1 ${x1} ${y1}` }
+    return { d: `M ${x0} ${y0} A ${radius} ${radius} 0 ${largeArc} 1 ${x1} ${y1}`, start, end, mid }
   }
   const colors = [
     '#4e79a7','#f28e2c','#e15759','#76b7b2','#59a14f','#edc949','#af7aa1','#ff9da7','#9c755f','#bab0ab'
@@ -53,7 +54,8 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
           <circle cx={center} cy={center} r={radius} fill="none" stroke="#e9ecef" strokeWidth={thickness} />
           <g>
             {data.map((d, i) => {
-              const arc = mkArc(d.chartValue ?? d.value)
+              const sliceValue = d.chartValue ?? d.value
+              const arc = mkArc(sliceValue)
               return (
                 <path key={d.label}
                   d={arc.d}
@@ -70,7 +72,14 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
                       y: e.clientY,
                       content: (
                         <div>
-                          <div className="fw-semibold">{d.label}</div>
+                          <div className="fw-semibold">
+                            {d.label}
+                            {(() => {
+                              const v = (d.chartValue ?? d.value) || 0
+                              const pct = total > 0 ? (v / total) * 100 : 0
+                              return <span className="ms-1 text-body-secondary">({pct.toFixed(1)}%)</span>
+                            })()}
+                          </div>
                           <div>Mevcut Değer: {fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
                           <div>Toplam Alım: {fmt(d.cost || 0, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
                           <div>Kar/Kazanç: {fmt((d.value - (d.cost || 0)), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
@@ -93,7 +102,14 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
                       y: e.clientY,
                       content: (
                         <div>
-                          <div className="fw-semibold">{d.label}</div>
+                          <div className="fw-semibold">
+                            {d.label}
+                            {(() => {
+                              const v = (d.chartValue ?? d.value) || 0
+                              const pct = total > 0 ? (v / total) * 100 : 0
+                              return <span className="ms-1 text-body-secondary">({pct.toFixed(1)}%)</span>
+                            })()}
+                          </div>
                           <div>Mevcut Değer: {fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
                           <div>Toplam Alım: {fmt(d.cost || 0, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
                           <div>Kar/Kazanç: {fmt((d.value - (d.cost || 0)), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
@@ -104,6 +120,48 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
                 />
               )
             })}
+          </g>
+          {/* Inline labels on slices */}
+          <g style={{ pointerEvents: 'none' }}>
+            {(() => {
+              // Re-run label placement with a separate cumulative so arc geometry matches
+              let cum = 0
+              return data.map((d, i) => {
+                const value = d.chartValue ?? d.value
+                const start = (cum / total) * 2 * Math.PI
+                const end = ((cum + value) / total) * 2 * Math.PI
+                const mid = (start + end) / 2
+                cum += value
+                const pct = total > 0 ? (value / total) * 100 : 0
+                const tooSmall = !(pct >= 6)
+                const rForText = radius // place text along the ring center
+                const tx = center + rForText * Math.cos(mid)
+                const ty = center + rForText * Math.sin(mid)
+                // For symbol/platform modes, prefer icon if available; market keeps text
+                if (labelMode !== 'market' && d.iconUrl) {
+                  const iconSize = 18
+                  return (
+                    <image
+                      key={`lbl-${i}`}
+                      href={d.iconUrl}
+                      x={tx - iconSize / 2}
+                      y={ty - iconSize / 2}
+                      width={iconSize}
+                      height={iconSize}
+                      preserveAspectRatio="xMidYMid meet"
+                      className="donut-slice-icon"
+                    />
+                  )
+                }
+                // For text labels (e.g. market), skip very small slices
+                if (tooSmall) return null
+                return (
+                  <text key={`lbl-${i}`} x={tx} y={ty} textAnchor="middle" dominantBaseline="middle" className="donut-slice-label" style={{ fontSize: '0.7rem', fill: 'var(--bs-body-color, #212529)' }}>
+                    {d.label}
+                  </text>
+                )
+              })
+            })()}
           </g>
           {/* Center totals: TRY and USD */}
           <text x={center} y={center - 8} textAnchor="middle" dominantBaseline="central" style={{ fontSize: '0.8rem' }}>
@@ -134,7 +192,14 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
           <div key={d.label} className="d-flex align-items-center justify-content-between small mb-2">
             <div className="d-flex align-items-center gap-2">
               <span style={{ width: 12, height: 12, background: colors[i % colors.length], display: 'inline-block', borderRadius: 3 }}></span>
-              <span className="fw-semibold">{d.label}</span>
+              <span className="fw-semibold">
+                {d.label}
+                {(() => {
+                  const v = (d.chartValue ?? d.value) || 0
+                  const pct = total > 0 ? (v / total) * 100 : 0
+                  return <span className="ms-1 text-body-secondary">({pct.toFixed(1)}%)</span>
+                })()}
+              </span>
             </div>
             <span className="text-body-secondary">{fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</span>
           </div>
@@ -154,6 +219,7 @@ const Analtik = () => {
   const [usdTryTlPrice, setUsdTryTlPrice] = useState(0)
   const [banks, setBanks] = useState([])
   const [symbolsData, setSymbolsData] = useState([])
+  const [expandedChartsByPortfolio, setExpandedChartsByPortfolio] = useState({})
 
   useEffect(() => {
     const q = query(collection(db, 'portfolios'), orderBy('createdAt', 'desc'))
@@ -247,6 +313,20 @@ const Analtik = () => {
       .replace(/[^0-9.-]/g, '')
     const num = parseFloat(normalized)
     return isNaN(num) ? 0 : num
+  }
+
+  const formatNumber = (value, currency) => {
+    const num = typeof value === 'number' ? value : parseNumber(value)
+    const locale = 'tr-TR'
+    try {
+      const hasCurrency = !!currency
+      const options = hasCurrency
+        ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
+        : { maximumFractionDigits: 6, useGrouping: true }
+      return new Intl.NumberFormat(locale, options).format(isNaN(num) ? 0 : num)
+    } catch (_) {
+      return String(isNaN(num) ? 0 : num)
+    }
   }
 
   const refreshPrices = async () => {
@@ -603,6 +683,389 @@ const Analtik = () => {
 
   return (
     <div className="container-fluid py-4">
+      {(() => {
+        const starred = (portfolios || []).filter(p => !!p.starred)
+        if (!starred || starred.length === 0) return null
+        const calcFifoRemaining = (list) => {
+          const sorted = [...list].sort((a, b) => {
+            const da = a.tarih instanceof Date ? a.tarih : (a.tarih?.toDate?.() || new Date(0))
+            const db = b.tarih instanceof Date ? b.tarih : (b.tarih?.toDate?.() || new Date(0))
+            return da - db
+          })
+          let remainingAdet = 0
+          let remainingMaaliyet = 0
+          const buys = []
+          sorted.forEach(tx => {
+            const adet = Number(parseNumber(tx.adet) || 0)
+            const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
+            const birimFiyat = adet > 0 ? (maaliyet / (adet || 1)) : 0
+            if ((tx.durum || '') === 'Alış') {
+              buys.push({ adet, birimFiyat })
+              remainingAdet += adet
+              remainingMaaliyet += maaliyet
+            } else if ((tx.durum || '') === 'Satış') {
+              let sellLeft = adet
+              let sellCost = 0
+              while (sellLeft > 0 && buys.length > 0) {
+                const b = buys[0]
+                const use = Math.min(sellLeft, b.adet)
+                sellCost += use * b.birimFiyat
+                b.adet -= use
+                sellLeft -= use
+                if (b.adet <= 0) buys.shift()
+              }
+              remainingAdet -= adet
+              remainingMaaliyet -= sellCost
+            }
+          })
+          return { remainingAdet: Number(remainingAdet || 0), remainingMaaliyet: Number(remainingMaaliyet || 0) }
+        }
+
+        // Helper to compute charts for a single portfolio
+        const buildChartsForPortfolio = (portfolioId) => {
+          const txs = transactionsByPortfolio[portfolioId] || []
+          // Yeni eklenen yıldızlı portföy chart'larında, hideFromHomeAndAnalytics işaretli olsa da gösterim yapılır
+          const effectiveTx = txs
+          // Market chart (sembol borsa)
+          const bySymbol = effectiveTx.reduce((acc, tx) => {
+            const key = tx.sembol || '—'
+            acc[key] = acc[key] || []
+            acc[key].push(tx)
+            return acc
+          }, {})
+          const marketAgg = {}
+          Object.keys(bySymbol).forEach((symbolKey) => {
+            const list = bySymbol[symbolKey]
+            const sorted = [...list].sort((a, b) => getTxDate(a) - getTxDate(b))
+            let remainingAdet = 0
+            let remainingCost = 0
+            const buys = []
+            sorted.forEach((tx) => {
+              const adet = Number(parseNumber(tx.adet) || 0)
+              const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
+              const birimFiyat = adet > 0 ? (maaliyet / (adet || 1)) : 0
+              if (tx.durum === 'Alış') {
+                buys.push({ adet, birimFiyat })
+                remainingAdet += adet
+                remainingCost += maaliyet
+              } else if (tx.durum === 'Satış') {
+                let sellQty = adet
+                while (sellQty > 0 && buys.length > 0) {
+                  const lot = buys[0]
+                  const useQty = Math.min(sellQty, lot.adet)
+                  remainingCost -= useQty * lot.birimFiyat
+                  lot.adet -= useQty
+                  sellQty -= useQty
+                  if (lot.adet <= 0) buys.shift()
+                }
+                remainingAdet -= adet
+              }
+            })
+            if (Math.abs(remainingAdet) < 1e-6) { remainingAdet = 0; remainingCost = 0 }
+            if (remainingAdet > 0) {
+              const symbolIdUpper = (symbolKey || '').toString().toUpperCase()
+              const curRaw = currencyMap.get ? currencyMap.get(symbolIdUpper) : undefined
+              const currency = (curRaw === 'TRY' || curRaw === '₺') ? '₺' : (curRaw || '')
+              const priceNum = Number(getDesiredPriceNum(symbolIdUpper) || 0)
+              const currentValue = priceNum > 0 ? priceNum * Number(remainingAdet || 0) : 0
+              const market = (list[0]?.sembolBorsa || 'Diğer').toString()
+              const key = `${market}__${currency || 'N/A'}`
+              const bucket = marketAgg[key] || { label: market, currency: currency || '', value: 0, cost: 0 }
+              bucket.value = Number(bucket.value || 0) + Number(currentValue || 0)
+              bucket.cost = Number(bucket.cost || 0) + Number(remainingCost || 0)
+              marketAgg[key] = bucket
+            }
+          })
+          const marketEntries = Object.values(marketAgg).filter(agg => (agg.value || 0) > 0).map(agg => {
+            const currency = agg.currency || ''
+            const usdRate = Number(usdTryTlPrice || 0) > 0 ? Number(usdTryTlPrice) : Number(fxMap.usdTry || 0)
+            const chartValue = (currency === 'USD' || currency === 'USDT') && usdRate > 0 ? agg.value * usdRate : agg.value
+            return { label: `${agg.label}${currency ? ` (${currency})` : ''}`, value: agg.value, chartValue, cost: agg.cost, currency }
+          }).sort((a, b) => b.value - a.value)
+          const marketTotals = (() => {
+            const tryTotal = marketEntries.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
+            const usdLike = new Set(['USD', 'USDT'])
+            const usdTotal = marketEntries.filter(d => usdLike.has((d.currency || '').toUpperCase())).reduce((s, d) => s + d.value, 0)
+            let usdTry = Number(fxMap.usdTry || 0)
+            if (!(usdTry > 0)) usdTry = Number(usdTryTlPrice || 0)
+            const combinedTry = tryTotal + (usdTry > 0 ? usdTotal * usdTry : 0)
+            return { tryTotal, usdTotal, combinedTry }
+          })()
+
+          // Platform currency distribution
+          const byPlatformSymbol = effectiveTx.reduce((acc, tx) => {
+            const platformId = (tx.platform || '—').toString()
+            const symbolKey = tx.sembol || '—'
+            acc[platformId] = acc[platformId] || {}
+            const inner = acc[platformId]
+            inner[symbolKey] = inner[symbolKey] || []
+            inner[symbolKey].push(tx)
+            return acc
+          }, {})
+          const bankNameById = (id) => {
+            const b = banks.find(x => x.id === id)
+            return b ? (b.name || id) : id
+          }
+          const platformAgg = {}
+          Object.keys(byPlatformSymbol).forEach((platformId) => {
+            const bySymbol = byPlatformSymbol[platformId]
+            Object.keys(bySymbol).forEach((symbolKey) => {
+              const list = bySymbol[symbolKey]
+              const sorted = [...list].sort((a, b) => getTxDate(a) - getTxDate(b))
+              let remainingAdet = 0
+              let remainingCost = 0
+              const buys = []
+              sorted.forEach((tx) => {
+                const adet = parseNumber(tx.adet)
+                const maaliyet = parseNumber(tx.maaliyet)
+                const birimFiyat = adet > 0 ? (maaliyet / (adet || 1)) : 0
+                if (tx.durum === 'Alış') {
+                  buys.push({ adet, birimFiyat })
+                  remainingAdet += adet
+                  remainingCost += maaliyet
+                } else if (tx.durum === 'Satış') {
+                  let sellQty = adet
+                  while (sellQty > 0 && buys.length > 0) {
+                    const lot = buys[0]
+                    const useQty = Math.min(sellQty, lot.adet)
+                    remainingCost -= useQty * lot.birimFiyat
+                    lot.adet -= useQty
+                    sellQty -= useQty
+                    if (lot.adet <= 0) buys.shift()
+                  }
+                  remainingAdet -= adet
+                }
+              })
+              if (Math.abs(remainingAdet) < 1e-6) { remainingAdet = 0; remainingCost = 0 }
+              if (remainingAdet > 0) {
+                const symbolIdUpper = (symbolKey || '').toString().toUpperCase()
+                const curRaw = currencyMap.get ? currencyMap.get(symbolIdUpper) : undefined
+                const currency = (curRaw === 'TRY' || curRaw === '₺') ? '₺' : (curRaw || '')
+                const priceNum = Number(getDesiredPriceNum(symbolIdUpper) || 0)
+                const currentValue = priceNum > 0 ? priceNum * Number(remainingAdet || 0) : 0
+                const labelBase = bankNameById(platformId)
+                const key = `${labelBase}__${currency || 'N/A'}`
+                const bucket = platformAgg[key] || { label: labelBase, currency: currency || '', value: 0, cost: 0 }
+                bucket.value = Number(bucket.value || 0) + Number(currentValue || 0)
+                bucket.cost = Number(bucket.cost || 0) + Number(remainingCost || 0)
+                platformAgg[key] = bucket
+              }
+            })
+          })
+          const platformEntries = Object.values(platformAgg).filter(agg => (agg.value || 0) > 0).map(agg => {
+            const currency = agg.currency || ''
+            const usdRate = Number(usdTryTlPrice || 0) > 0 ? Number(usdTryTlPrice) : Number(fxMap.usdTry || 0)
+            const chartValue = (currency === 'USD' || currency === 'USDT') && usdRate > 0 ? agg.value * usdRate : agg.value
+            const bank = banks.find(b => (b.name || b.id) === agg.label || b.id === agg.label)
+            const iconUrl = bank?.imageUrl
+            return { label: `${agg.label}${currency ? ` (${currency})` : ''}`, value: agg.value, chartValue, cost: agg.cost, currency, iconUrl }
+          }).sort((a, b) => b.chartValue - a.chartValue)
+          const platformTotals = (() => {
+            const tryTotal = platformEntries.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
+            const usdLike = new Set(['USD', 'USDT'])
+            const usdTotal = platformEntries.filter(d => usdLike.has((d.currency || '').toUpperCase())).reduce((s, d) => s + d.value, 0)
+            let usdTry = Number(fxMap.usdTry || 0)
+            if (!(usdTry > 0)) usdTry = Number(usdTryTlPrice || 0)
+            const combinedTry = tryTotal + (usdTry > 0 ? usdTotal * usdTry : 0)
+            return { tryTotal, usdTotal, combinedTry }
+          })()
+
+        // Symbol distribution for portfolio
+          const symbolEntries = (() => {
+            const grouped = effectiveTx.reduce((acc, tx) => {
+              const key = tx.sembol || '—'
+              acc[key] = acc[key] || []
+              acc[key].push(tx)
+              return acc
+            }, {})
+            const entries = []
+            Object.keys(grouped).forEach((symbolKey) => {
+              const list = grouped[symbolKey]
+              const sorted = [...list].sort((a, b) => getTxDate(a) - getTxDate(b))
+              let remainingAdet = 0
+              let remainingCost = 0
+              const buys = []
+              sorted.forEach((tx) => {
+                const adet = Number(parseNumber(tx.adet) || 0)
+                const maaliyet = Number(parseNumber(tx.maaliyet) || 0)
+                const birimFiyat = adet > 0 ? (maaliyet / (adet || 1)) : 0
+                if (tx.durum === 'Alış') {
+                  buys.push({ adet, birimFiyat })
+                  remainingAdet += adet
+                  remainingCost += maaliyet
+                } else if (tx.durum === 'Satış') {
+                  let sellQty = adet
+                  while (sellQty > 0 && buys.length > 0) {
+                    const lot = buys[0]
+                    const useQty = Math.min(sellQty, lot.adet)
+                    remainingCost -= useQty * lot.birimFiyat
+                    lot.adet -= useQty
+                    sellQty -= useQty
+                    if (lot.adet <= 0) buys.shift()
+                  }
+                  remainingAdet -= adet
+                }
+              })
+              if (Math.abs(remainingAdet) < 1e-6) { remainingAdet = 0; remainingCost = 0 }
+              if (remainingAdet > 0) {
+                const symbolIdUpper = (symbolKey || '').toString().toUpperCase()
+                const curRaw = currencyMap.get ? currencyMap.get(symbolIdUpper) : undefined
+                const currency = (curRaw === 'TRY' || curRaw === '₺') ? '₺' : (curRaw || '')
+                const priceNum = Number(getDesiredPriceNum(symbolIdUpper) || 0)
+                const currentValue = priceNum > 0 ? priceNum * Number(remainingAdet || 0) : 0
+                const symCfg = symbolsData.find(s => (s.id || '').toUpperCase() === symbolIdUpper)
+                const label = symCfg ? (symCfg.name || symCfg.id) : symbolKey
+                const usdRate = Number(usdTryTlPrice || 0) > 0 ? Number(usdTryTlPrice) : Number(fxMap.usdTry || 0)
+                const chartValue = (currency === 'USD' || currency === 'USDT') && usdRate > 0 ? currentValue * usdRate : currentValue
+                const iconUrl = symbolsData.find(s => (s.id || '').toUpperCase() === symbolIdUpper)?.logoUrl
+                entries.push({ label: `${label}${currency ? ` (${currency})` : ''}`, value: currentValue, chartValue, cost: remainingCost, currency, iconUrl })
+              }
+            })
+            return entries.sort((a, b) => b.chartValue - a.chartValue)
+          })()
+          const symbolTotals = (() => {
+            const tryTotal = symbolEntries.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
+            const usdLike = new Set(['USD', 'USDT'])
+            const usdTotal = symbolEntries.filter(d => usdLike.has((d.currency || '').toUpperCase())).reduce((s, d) => s + d.value, 0)
+            let usdTry = Number(fxMap.usdTry || 0)
+            if (!(usdTry > 0)) usdTry = Number(usdTryTlPrice || 0)
+            const combinedTry = tryTotal + (usdTry > 0 ? usdTotal * usdTry : 0)
+            return { tryTotal, usdTotal, combinedTry }
+          })()
+
+          return {
+            marketEntries, marketTotals,
+            platformEntries, platformTotals,
+            symbolEntries, symbolTotals,
+          }
+        }
+
+        // Header row (horizontal like home)
+        return (
+          <>
+            <div className="anasayfa-portfoy mb-3">
+              {starred.map((p) => {
+                const txs = (transactionsByPortfolio[p.id] || [])
+                const grouped = txs.reduce((acc, tx) => {
+                  const key = (tx.sembol || '').toString()
+                  if (!key) return acc
+                  acc[key] = acc[key] || []
+                  acc[key].push(tx)
+                  return acc
+                }, {})
+                const entries = Object.keys(grouped).map(symId => {
+                  const list = grouped[symId]
+                  const fifo = calcFifoRemaining(list)
+                  return { symId, list, fifo }
+                }).filter(e => (e.fifo.remainingAdet || 0) > 0)
+                const openCount = entries.length
+                const totalsByCur = (() => {
+                  const base = {}
+                  const current = {}
+                  entries.forEach(({ symId, list, fifo }) => {
+                    const cur = (list[0]?.birim === 'TRY' || list[0]?.birim === '₺') ? '₺' : (list[0]?.birim || '')
+                    const symKey = (symId || '').toString().toUpperCase()
+                    const curNum = Number(getDesiredPriceNum(symKey) || 0)
+                    const currentVal = curNum > 0 ? Number(fifo.remainingAdet || 0) * curNum : 0
+                    base[cur] = Number(base[cur] || 0) + Number(fifo.remainingMaaliyet || 0)
+                    current[cur] = Number(current[cur] || 0) + Number(currentVal || 0)
+                  })
+                  return { base, current }
+                })()
+                const isOpen = !!expandedChartsByPortfolio[p.id]
+                return (
+                  <div key={p.id} className="portfoy-wrap" role="button" onClick={() => setExpandedChartsByPortfolio(prev => ({ ...prev, [p.id]: !prev[p.id] }))}>
+                    <div className="name"> {p.name || 'Adsız portföy'}</div>
+                    <div className="hisse-sayisi"> Hisse sayısı: {openCount}</div>
+                    <div className="price">
+                      {(() => {
+                        const curKeys = Array.from(new Set([
+                          ...Object.keys(totalsByCur.base || {}),
+                          ...Object.keys(totalsByCur.current || {})
+                        ]))
+                        const rows = curKeys.map(cur => {
+                          const baseVal = totalsByCur.base[cur] || 0
+                          const curVal = totalsByCur.current[cur] || 0
+                          const gain = curVal - baseVal
+                          const pct = baseVal > 0 ? (gain / baseVal) * 100 : 0
+                          const cls = gain > 0 ? 'text-success' : (gain < 0 ? 'text-danger' : 'text-body-secondary')
+                          return (
+                            <div className="price-currency" key={cur}>
+                              <div className="alis">{formatNumber(baseVal, cur)} {cur}</div>
+                              <div className="guncel">{formatNumber(curVal, cur)} {cur}</div>
+                              <div className={`price-kazanc small ${cls}`}>
+                                {formatNumber(Math.abs(gain), cur)} {cur} ({gain >= 0 ? '+' : ''}{Number(pct).toFixed(2)}%)
+                              </div>
+                            </div>
+                          )
+                        })
+                        try {
+                          const tryCur = (totalsByCur.current['₺'] || totalsByCur.current['TRY'] || 0)
+                          const usdCur = (totalsByCur.current['USD'] || 0)
+                          const usdRate = Number(usdTryTlPrice || 0) > 0 ? Number(usdTryTlPrice) : Number(fxMap.usdTry || 0)
+                          const combinedTry = Number(tryCur || 0) + (usdRate > 0 ? Number(usdCur || 0) * Number(usdRate) : 0)
+                          rows.push(
+                            <div key="combined-try" className="mt-1">
+                              Toplam (₺): {formatNumber(combinedTry, '₺')} ₺
+                            </div>
+                          )
+                        } catch (_) {}
+                        return rows
+                      })()}
+                    </div>
+                    <div className="mt-1 small text-body-secondary d-flex align-items-center gap-1">
+                      <i className={`bi ${isOpen ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                      {isOpen ? 'Grafikleri gizle' : 'Grafikleri göster'}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {starred.map((p) => {
+              const isOpen = !!expandedChartsByPortfolio[p.id]
+              if (!isOpen) return null
+              const { marketEntries, marketTotals, platformEntries, platformTotals, symbolEntries, symbolTotals } = buildChartsForPortfolio(p.id)
+              return (
+                <div key={`charts-${p.id}`} className="mb-4">
+                  <div className="card shadow-sm border-0">
+                    <div className="card-body">
+                      <div className="d-flex align-items-center justify-content-between mb-3">
+                        <div className="d-flex align-items-center gap-2">
+                          <i className="bi bi-pie-chart"></i>
+                          <span className="fw-semibold">{p.name || 'Portföy'} - Sembol Borsa dağılımı</span>
+                        </div>
+                      </div>
+                      <DonutChart data={marketEntries} totals={marketTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="market" />
+                    </div>
+                  </div>
+                  <div className="card shadow-sm border-0 mt-3">
+                    <div className="card-body">
+                      <div className="d-flex align-items-center justify-content-between mb-3">
+                        <div className="d-flex align-items-center gap-2">
+                          <i className="bi bi-bank2"></i>
+                          <span className="fw-semibold">{p.name || 'Portföy'} - Platform para birimi dağılımı</span>
+                        </div>
+                      </div>
+                      <DonutChart data={platformEntries} totals={platformTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="platform" />
+                    </div>
+                  </div>
+                  <div className="card shadow-sm border-0 mt-3">
+                    <div className="card-body">
+                      <div className="d-flex align-items-center justify-content-between mb-3">
+                        <div className="d-flex align-items-center gap-2">
+                          <i className="bi bi-tags"></i>
+                          <span className="fw-semibold">{p.name || 'Portföy'} - Hisse dağılımı</span>
+                        </div>
+                      </div>
+                      <DonutChart data={symbolEntries} totals={symbolTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="symbol" />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )
+      })()}
       <div className="d-flex align-items-center justify-content-between mb-4">
         <h4 className="display-6 mb-0">
           <i className="bi bi-pie-chart me-2"></i>Analtik
@@ -631,7 +1094,10 @@ const Analtik = () => {
               <span className="fw-semibold">Platform para birimi dağılımı</span>
             </div>
           </div>
-          <DonutChart data={platformDonutData} totals={platformTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} />
+                      <DonutChart data={platformDonutData.map(d => {
+                        const bank = banks.find(b => (b.name && d.label?.startsWith(b.name)) || d.label?.startsWith(b.id))
+                        return { ...d, iconUrl: bank?.imageUrl }
+                      })} totals={platformTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="platform" />
         </div>
       </div>
 
@@ -643,7 +1109,12 @@ const Analtik = () => {
               <span className="fw-semibold">Hisse dağılımı</span>
             </div>
           </div>
-          <DonutChart data={symbolDonutData} totals={symbolTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} />
+                      <DonutChart data={symbolDonutData.map(d => {
+                        // d.label like "BTC (USD)", try to map symbol by name or id in symbolsData
+                        const nameToken = (d.label || '').split(' (')[0]
+                        const sym = symbolsData.find(s => (s.name || s.id) === nameToken)
+                        return { ...d, iconUrl: sym?.logoUrl }
+                      })} totals={symbolTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="symbol" />
         </div>
       </div>
     </div>
