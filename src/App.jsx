@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import BottomNav from './components/BottomNav'
+import LoadingStocks from './components/LoadingStocks'
 import Anasayfa from './pages/Anasayfa'
 import Analtik from './pages/Analtik'
 import Kartlar from './pages/Kartlar'
 import Ayarlar from './pages/Ayarlar'
 import Ekle from './pages/Ekle'
+import HisseHesapHareketleri from './pages/HisseHesapHareketleri'
 import Portfoy from './pages/Portfoy'
 import Banka from './pages/Banka'
 import Semboller from './pages/Semboller'
 
 function App() {
   const [activeTab, setActiveTab] = useState('anasayfa')
+  const [showLoading, setShowLoading] = useState(true)
 
   // Apply theme globally based on saved preference or system
   const [themePreference, setThemePreference] = useState(() => {
@@ -104,6 +107,8 @@ function App() {
         return <Banka onBack={() => setActiveTab('add')} />
       case 'semboller':
         return <Semboller onBack={() => setActiveTab('add')} />
+      case 'hisseHesapHareketleri':
+        return <HisseHesapHareketleri onBack={() => setActiveTab('add')} />
       default:
         return <Anasayfa />
     }
@@ -111,10 +116,12 @@ function App() {
 
   return (
     <div className="vh-100 d-flex flex-column">
-      <main className="flex-grow-1 pb-5">
+      {showLoading && (
+        <LoadingStocks onComplete={() => setShowLoading(false)} />
+      )}
+      <main className="flex-grow-1 pb-5" aria-hidden={showLoading}>
         {renderPage()}
       </main>
-      
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
     </div>
   )

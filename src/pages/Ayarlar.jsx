@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import LoadingStocks from '../components/LoadingStocks'
 import { db } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -150,6 +151,8 @@ const Ayarlar = () => {
     window.location.reload();
   };
 
+  const [showLoadingOverlay, setShowLoadingOverlay] = useState(false)
+
   return (
     <div className="container-fluid h-100 d-flex align-items-center justify-content-center">
       <div className="text-center" style={{ width: '100%', maxWidth: 900 }}>
@@ -213,8 +216,16 @@ const Ayarlar = () => {
             <div className="form-text">
               A sütununda sembol adı, B sütununda fiyat olacak şekilde düzenleyin. Link CSV paylaşımı olabilir ya da normal paylaşım; otomatik CSV'ye çevirmeye çalışırız.
             </div>
-            <div className="d-grid mt-2">
+            <div className="d-grid mt-2 gap-2">
               <button className="btn btn-primary" onClick={saveSheetUrl}>Kaydet</button>
+              <button
+                type="button"
+                className="btn btn-success d-flex align-items-center justify-content-center gap-2"
+                onClick={() => setShowLoadingOverlay(true)}
+              >
+                <i className="bi bi-arrow-clockwise"></i>
+                Fiyatı Güncelle
+              </button>
             </div>
           </div>
 
@@ -225,6 +236,9 @@ const Ayarlar = () => {
           </div>
         </div>
       </div>
+      {showLoadingOverlay && (
+        <LoadingStocks onComplete={() => setShowLoadingOverlay(false)} />
+      )}
     </div>
   );
 };

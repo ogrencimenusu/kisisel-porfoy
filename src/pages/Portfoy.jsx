@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { fetchPriceMapsFromGlobalSheet, fetchRowsFromNamedTab } from '../services/sheetService'
+import { fetchRowsFromNamedTab } from '../services/sheetService'
+import { buildMapsFromSymbolDocs } from '../services/priceUpdateService'
 import { db } from '../firebase'
 import { collection, onSnapshot, addDoc, serverTimestamp, query, orderBy, getDocs, getDoc, setDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore'
 
@@ -104,27 +105,32 @@ const Portfoy = ({ onBack }) => {
     })()
   }, [])
 
+  // Derive USD/TRY from DB symbols (keeps page DB-only)
   useEffect(() => {
-    // Load USD/TRY from tl_price sheet
-    const load = async () => {
-      try {
-        const rows = await fetchRowsFromNamedTab('tl_price')
-        // Expect rows like: [ [USD, 41,6898], [EUR, 48,6068] ] possibly with or without header
-        const entries = rows.map(r => [(r[0] || '').toString().trim().toUpperCase(), (r[1] || '').toString().trim()])
-        const usdEntry = entries.find(([k]) => k === 'USD')
-        if (usdEntry) {
-          const val = usdEntry[1]
-          const num = parseNumber(val)
-          setUsdTryTlPrice(num > 0 ? num : 0)
-        } else {
-          setUsdTryTlPrice(0)
-        }
-      } catch (_) {
-        setUsdTryTlPrice(0)
+    try {
+      const { priceBySymbol } = buildMapsFromSymbolDocs(symbolsData)
+      const tryKeys = ['USDTRY', 'USD/TRY', 'USD-TRY', 'USD TL', 'USD TL KURU', 'USDTTRY', 'DOLAR']
+      const invKeys = ['TRYUSD', 'TRY/USD', 'TRY-USD', 'TLUSD', 'TL/USD', 'TL-USD']
+      let usdTry = 0
+      for (const kRaw of tryKeys) {
+        const k = (kRaw || '').toUpperCase()
+        const v = priceBySymbol.get?.(k)
+        const num = parseNumber(v)
+        if (num > 0) { usdTry = num; break }
       }
+      if (usdTry <= 0) {
+        for (const kRaw of invKeys) {
+          const k = (kRaw || '').toUpperCase()
+          const v = priceBySymbol.get?.(k)
+          const num = parseNumber(v)
+          if (num > 0) { usdTry = 1 / num; break }
+        }
+      }
+      setUsdTryTlPrice(usdTry > 0 ? usdTry : 0)
+    } catch (_) {
+      setUsdTryTlPrice(0)
     }
-    load()
-  }, [])
+  }, [symbolsData])
 
   useEffect(() => {
     // fetch user-defined symbols live
@@ -142,25 +148,18 @@ const Portfoy = ({ onBack }) => {
   }, [])
 
   const fetchGlobalSheetPrices = async () => {
+    // Replace with DB-derived prices (naming kept for minimal change)
     try {
-      // Log RAW rows from 'sembol_fiyat' without any transformations
-      try {
-        const rawPriceRows = await fetchRowsFromNamedTab('sembol_fiyat')
-        console.log('[Sheet] semboI_fiyat fetched', { rows: rawPriceRows?.length || 0 })
-      } catch (_) {}
-
-      const { priceBySymbol, currencyBySymbol, percentageBySymbol } = await fetchPriceMapsFromGlobalSheet()
+      const { priceBySymbol, currencyBySymbol, percentageBySymbol } = buildMapsFromSymbolDocs(symbolsData)
       const obj = {}
       priceBySymbol.forEach((v, k) => { obj[k] = v })
       const percentageObj = {}
       percentageBySymbol.forEach((v, k) => { percentageObj[k] = v })
-      // Apply desiredSample transform
       const applyDesiredTransform = (rawValue, desiredSample, cur) => {
         if (!desiredSample) return rawValue
         const desired = (desiredSample || '').toString()
         const desiredDigits = (desired.match(/\d/g) || []).length
         if (desiredDigits <= 0) return rawValue
-        // Always use comma as decimal separator for display
         const sepChar = ','
         const firstDot = desired.indexOf('.')
         const firstComma = desired.indexOf(',')
@@ -189,13 +188,9 @@ const Portfoy = ({ onBack }) => {
           }
         })
       } catch (_) {}
-      // Debug logs for fetched data
-      try { /* no-op debug removed */ } catch (_) {}
       setSheetPrices(obj)
       setSheetPercentages(percentageObj)
-    } catch (e) {
-      /* silent */
-    }
+    } catch (e) { /* silent */ }
   }
 
   useEffect(() => {

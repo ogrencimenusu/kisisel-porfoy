@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../firebase'
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
-import { fetchPriceMapsFromGlobalSheet, fetchRowsFromNamedTab } from '../services/sheetService'
+import { fetchRowsFromNamedTab } from '../services/sheetService'
+import { buildMapsFromSymbolDocs } from '../services/priceUpdateService'
 
 // Basit, bağımsız SVG donut chart
 const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, usdTotal: 0 }, usdTryTlPrice = 0, fxMap = { usdTry: 0 }, labelMode = 'text' }) => {
@@ -48,7 +49,7 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
   }
 
   return (
-    <div ref={containerRef} className="position-relative d-flex align-items-center gap-4">
+    <div ref={containerRef} className="position-relative d-flex flex-column align-items-center gap-3">
       <div className="d-flex flex-column align-items-center">
         <svg width={size} height={size} role="img" aria-label="Sembol Borsa dağılımı">
           <circle cx={center} cy={center} r={radius} fill="none" stroke="#e9ecef" strokeWidth={thickness} />
@@ -187,23 +188,35 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
           </div>
         </div>
       )}
-      <div className="flex-grow-1">
-        {data.map((d, i) => (
-          <div key={d.label} className="d-flex align-items-center justify-content-between small mb-2">
-            <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 12, height: 12, background: colors[i % colors.length], display: 'inline-block', borderRadius: 3 }}></span>
-              <span className="fw-semibold">
-                {d.label}
-                {(() => {
-                  const v = (d.chartValue ?? d.value) || 0
-                  const pct = total > 0 ? (v / total) * 100 : 0
-                  return <span className="ms-1 text-body-secondary">({pct.toFixed(1)}%)</span>
-                })()}
-              </span>
+      <div className="w-100 mt-2">
+        {data.map((d, i) => {
+          const v = (d.chartValue ?? d.value) || 0
+          const pctOfWhole = total > 0 ? (v / total) * 100 : 0
+          const gain = Number((d.value || 0) - (d.cost || 0))
+          const gainPct = (d.cost || 0) > 0 ? (gain / Number(d.cost || 0)) * 100 : 0
+          const gainCls = gain > 0 ? 'text-success' : (gain < 0 ? 'text-danger' : 'text-body-secondary')
+          return (
+            <div key={d.label} className="d-flex align-items-center justify-content-between small mb-2">
+              <div className="d-flex align-items-center gap-2">
+                <span style={{ width: 12, height: 12, background: colors[i % colors.length], display: 'inline-block', borderRadius: 3 }}></span>
+                <span className="fw-semibold">
+                  {d.label}
+                  <span className="ms-1 text-body-secondary">({pctOfWhole.toFixed(1)}%)</span>
+                </span>
+              </div>
+              <div className="d-flex flex-column align-items-end">
+                <span className="text-body-secondary">{fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</span>
+                {labelMode === 'symbol' && (
+                  <span className={`small ${gainCls}`}>
+                    {gain >= 0 ? '+' : ''}{fmt(Math.abs(gain), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}
+                    {' '}
+                    ({gain >= 0 ? '+' : ''}{Number(gainPct).toFixed(2)}%)
+                  </span>
+                )}
+              </div>
             </div>
-            <span className="text-body-secondary">{fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</span>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -329,13 +342,14 @@ const Analtik = () => {
     }
   }
 
-  const refreshPrices = async () => {
+  // Always read prices from DB symbols
+  useEffect(() => {
     try {
-      const { priceBySymbol, currencyBySymbol, percentageBySymbol } = await fetchPriceMapsFromGlobalSheet()
+      const { priceBySymbol, currencyBySymbol, percentageBySymbol } = buildMapsFromSymbolDocs(symbolsData)
       setPriceMap(priceBySymbol)
       setCurrencyMap(currencyBySymbol)
       setPercentageMap(percentageBySymbol)
-      // USD/TRY kuru aynı sheet'te sembol anahtarı olarak olabilir; yaygın anahtarları deneyelim
+      // USD/TRY from symbols if available
       const tryKeys = ['USDTRY', 'USD/TRY', 'USD-TRY', 'USD TL', 'USD TL KURU', 'USDTTRY', 'DOLAR']
       const invKeys = ['TRYUSD', 'TRY/USD', 'TRY-USD', 'TLUSD', 'TL/USD', 'TL-USD']
       let usdTry = 0
@@ -360,9 +374,7 @@ const Analtik = () => {
       setPercentageMap(new Map())
       setFxMap({ usdTry: 0 })
     }
-  }
-
-  useEffect(() => { refreshPrices() }, [])
+  }, [symbolsData])
 
   useEffect(() => {
     // Fallback USD/TRY from tl_price sheet
@@ -684,7 +696,19 @@ const Analtik = () => {
   return (
     <div className="container-fluid py-4">
       {(() => {
-        const starred = (portfolios || []).filter(p => !!p.starred)
+        const starred = (portfolios || [])
+          .filter(p => !!p.starred)
+          .sort((a, b) => {
+            const ao = Number(a?.order ?? Number.MAX_SAFE_INTEGER)
+            const bo = Number(b?.order ?? Number.MAX_SAFE_INTEGER)
+            if (ao !== bo) return ao - bo
+            // Tie-breaker: newer first by createdAt, if available
+            try {
+              const ad = a?.createdAt?.toMillis ? a.createdAt.toMillis() : (a?.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0)
+              const bd = b?.createdAt?.toMillis ? b.createdAt.toMillis() : (b?.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0)
+              return bd - ad
+            } catch (_) { return 0 }
+          })
         if (!starred || starred.length === 0) return null
         const calcFifoRemaining = (list) => {
           const sorted = [...list].sort((a, b) => {
@@ -995,6 +1019,8 @@ const Analtik = () => {
                               <div className="guncel">{formatNumber(curVal, cur)} {cur}</div>
                               <div className={`price-kazanc small ${cls}`}>
                                 {formatNumber(Math.abs(gain), cur)} {cur} ({gain >= 0 ? '+' : ''}{Number(pct).toFixed(2)}%)
+                              
+                              
                               </div>
                             </div>
                           )
@@ -1007,16 +1033,18 @@ const Analtik = () => {
                           rows.push(
                             <div key="combined-try" className="mt-1">
                               Toplam (₺): {formatNumber(combinedTry, '₺')} ₺
+
+                              <div className="mt-1 small text-body-secondary d-flex align-items-center gap-1">
+                                <i className={`bi ${isOpen ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                                {isOpen ? 'Grafikleri gizle' : 'Grafikleri göster'}
+                              </div>
                             </div>
                           )
                         } catch (_) {}
                         return rows
                       })()}
                     </div>
-                    <div className="mt-1 small text-body-secondary d-flex align-items-center gap-1">
-                      <i className={`bi ${isOpen ? 'bi-eye-slash' : 'bi-eye'}`}></i>
-                      {isOpen ? 'Grafikleri gizle' : 'Grafikleri göster'}
-                    </div>
+                    
                   </div>
                 )
               })}
@@ -1070,16 +1098,14 @@ const Analtik = () => {
         <h4 className="display-6 mb-0">
           <i className="bi bi-pie-chart me-2"></i>Analtik
         </h4>
-        <button className="btn btn-outline-secondary" onClick={refreshPrices}>
-          <i className="bi bi-arrow-clockwise me-2"></i>Fiyatları yenile
-        </button>
+        
       </div>
       <div className="card shadow-sm border-0">
         <div className="card-body">
           <div className="d-flex align-items-center justify-content-between mb-3">
             <div className="d-flex align-items-center gap-2">
               <i className="bi bi-graph-up"></i>
-              <span className="fw-semibold">Sembol Borsa dağılımı (mevcut toplam değer)</span>
+              <span className="fw-semibold">Sembol Borsa dağılımı</span>
             </div>
           </div>
           <DonutChart data={donutData} totals={totals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} />

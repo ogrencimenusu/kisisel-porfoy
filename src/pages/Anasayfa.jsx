@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db } from '../firebase'
-import { fetchRowsFromNamedTab, fetchPriceMapsFromGlobalSheet } from '../services/sheetService'
+import { fetchRowsFromNamedTab } from '../services/sheetService'
+import { buildMapsFromSymbolDocs } from '../services/priceUpdateService'
 import { collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore'
 import HomePlatformCards from '../components/HomePlatformCards'
 import HomeStarredPortfolios from '../components/HomeStarredPortfolios'
@@ -102,21 +103,19 @@ const Anasayfa = () => {
     load()
   }, [])
 
+  // Always read prices from DB symbols
   useEffect(() => {
-    const loadPrices = async () => {
-      try {
-        const { priceBySymbol, currencyBySymbol, percentageBySymbol } = await fetchPriceMapsFromGlobalSheet()
-        setPriceBySymbol(priceBySymbol)
-        setCurrencyBySymbol(currencyBySymbol)
-        setPercentageBySymbol(percentageBySymbol)
-      } catch (_) {
-        setPriceBySymbol(new Map())
-        setCurrencyBySymbol(new Map())
-        setPercentageBySymbol(new Map())
-      }
+    try {
+      const { priceBySymbol, currencyBySymbol, percentageBySymbol } = buildMapsFromSymbolDocs(symbolsData)
+      setPriceBySymbol(priceBySymbol)
+      setCurrencyBySymbol(currencyBySymbol)
+      setPercentageBySymbol(percentageBySymbol)
+    } catch (_) {
+      setPriceBySymbol(new Map())
+      setCurrencyBySymbol(new Map())
+      setPercentageBySymbol(new Map())
     }
-    loadPrices()
-  }, [])
+  }, [symbolsData])
 
   const formatNumber = (value, currency) => {
     const num = typeof value === 'number' ? value : parseNumber(value)
