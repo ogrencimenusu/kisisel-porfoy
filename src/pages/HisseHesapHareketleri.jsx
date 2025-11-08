@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { db } from '../firebase'
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { collection, onSnapshot, orderBy, query, where, Timestamp } from 'firebase/firestore'
 
 const HisseHesapHareketleri = ({ onBack }) => {
   const [portfolios, setPortfolios] = useState([])
@@ -60,10 +60,15 @@ const HisseHesapHareketleri = ({ onBack }) => {
     const unsubs = []
     portfolios.forEach((p) => {
       try {
-        const tq = query(collection(db, 'portfolios', p.id, 'transactions'), orderBy('createdAt', 'desc'))
+        // Get all transactions without date filter - let client-side filtering handle it
+        // This ensures we get all historical data
+        const tq = query(collection(db, 'portfolios', p.id, 'transactions'), orderBy('tarih', 'desc'))
         const unsub = onSnapshot(tq, (snap) => {
           const tx = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          console.log(`Portfolio ${p.id}: ${tx.length} transactions loaded`)
           setTransactionsByPortfolio(prev => ({ ...prev, [p.id]: tx }))
+        }, (error) => {
+          console.error(`Error loading transactions for portfolio ${p.id}:`, error)
         })
         unsubs.push(unsub)
       } catch (_) {}
@@ -82,7 +87,7 @@ const HisseHesapHareketleri = ({ onBack }) => {
           const symbol = (tx.sembol || '').toString()
           const adet = tx.adet
           const portfolioName = p.name || p.title || p.id
-          const createdAt = (tx.createdAt?.toDate?.() || tx.tarih?.toDate?.() || tx.tarih || null)
+          const createdAt = (tx.tarih?.toDate?.() || tx.tarih || tx.createdAt?.toDate?.() || tx.createdAt || null)
           const bankId = (tx.platform || '').toString()
           const borsa = (tx.sembolBorsa || '').toString()
           const durum = (tx.durum || '').toString()
@@ -92,7 +97,17 @@ const HisseHesapHareketleri = ({ onBack }) => {
       // Apply filters
       const withinDate = (d) => {
         if (!filters.dateFrom && !filters.dateTo) return true
-        const t = d instanceof Date ? d.getTime() : (d ? new Date(d).getTime() : NaN)
+        // Handle Firestore Timestamp, Date, or string
+        let t
+        if (d && typeof d.toDate === 'function') {
+          t = d.toDate().getTime()
+        } else if (d instanceof Date) {
+          t = d.getTime()
+        } else if (d) {
+          t = new Date(d).getTime()
+        } else {
+          return false
+        }
         if (isNaN(t)) return false
         if (filters.dateFrom) {
           const f = new Date(filters.dateFrom + 'T00:00:00').getTime()
@@ -162,13 +177,14 @@ const HisseHesapHareketleri = ({ onBack }) => {
                 <div className="fw-semibold">
                   {e.durum === 'Satış' ? (
                     <span className="badge text-bg-danger me-2">Satış</span>
+                  ) : e.durum === 'Stopaj Kesintisi' ? (
+                    <span className="badge text-bg-primary me-2">Stopaj Kesintisi</span>
                   ) : (
                     <span className="badge text-bg-success me-2">Alış</span>
                   )}
-                  {formatNumber(e.adet)} Adet
                 </div>
                 <div className="small text-body-secondary">
-                  {e.durum === 'Satış' ? 'Satış Fiyatı' : 'Alış Fiyatı'}: {formatNumber(e?.raw?.fiyat)} {e?.raw?.birim || ''}
+                  Toplam Maliyet: {formatNumber(e?.raw?.maaliyet || e?.raw?.fiyat)} {e?.raw?.birim || ''}
                 </div>
                 <small className="text-body-secondary">{e.createdAt instanceof Date ? e.createdAt.toLocaleDateString() : ''}</small>
               </div>
@@ -333,6 +349,7 @@ const HisseHesapHareketleri = ({ onBack }) => {
                     <option value="">Tümü</option>
                     <option value="Alış">Alış</option>
                     <option value="Satış">Satış</option>
+                    <option value="Stopaj Kesintisi">Stopaj Kesintisi</option>
                   </select>
                 </div>
               </div>

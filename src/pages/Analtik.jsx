@@ -10,7 +10,18 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
   const radius = (size - thickness) / 2
   const center = size / 2
   let cumulative = 0
-  const mkArc = (value) => {
+  const mkArc = (value, isFullCircle = false) => {
+    if (isFullCircle) {
+      // Tam daire için özel path
+      const x0 = center + radius
+      const y0 = center
+      return { 
+        d: `M ${x0} ${y0} A ${radius} ${radius} 0 1 1 ${x0 - 0.01} ${y0} A ${radius} ${radius} 0 1 1 ${x0} ${y0}`, 
+        start: 0, 
+        end: 2 * Math.PI, 
+        mid: Math.PI 
+      }
+    }
     const start = (cumulative / total) * 2 * Math.PI
     const end = ((cumulative + value) / total) * 2 * Math.PI
     const mid = (start + end) / 2
@@ -52,19 +63,94 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
     <div ref={containerRef} className="position-relative d-flex flex-column align-items-center gap-3">
       <div className="d-flex flex-column align-items-center">
         <svg width={size} height={size} role="img" aria-label="Sembol Borsa dağılımı">
-          <circle cx={center} cy={center} r={radius} fill="none" stroke="#e9ecef" strokeWidth={thickness} />
+          {data.length > 1 && (
+            <circle cx={center} cy={center} r={radius} fill="none" stroke="#e9ecef" strokeWidth={thickness} />
+          )}
           <g>
             {data.map((d, i) => {
               const sliceValue = d.chartValue ?? d.value
-              const arc = mkArc(sliceValue)
+              const isFullCircle = data.length === 1 && Math.abs(sliceValue - total) < 1e-6
+              const arc = mkArc(sliceValue, isFullCircle)
+              const color = colors[i % colors.length]
+              const opacity = activeIdx === null || activeIdx === i ? 1 : 0.35
+              
+              // Tek slice ve %100 ise tam daire için circle kullan
+              if (isFullCircle) {
+                return (
+                  <circle
+                    key={d.label}
+                    cx={center}
+                    cy={center}
+                    r={radius}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={thickness}
+                    opacity={opacity}
+                    onMouseEnter={(e) => {
+                      setActiveIdx(i)
+                      setTooltip({
+                        visible: true,
+                        x: e.clientX,
+                        y: e.clientY,
+                        content: (
+                          <div>
+                            <div className="fw-semibold">
+                              {d.label}
+                              {(() => {
+                                const v = (d.chartValue ?? d.value) || 0
+                                const pct = total > 0 ? (v / total) * 100 : 0
+                                return <span className="ms-1 text-body-secondary">({pct.toFixed(1)}%)</span>
+                              })()}
+                            </div>
+                            <div>Mevcut Değer: {fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                            <div>Toplam Alım: {fmt(d.cost || 0, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                            <div>Kar/Kazanç: {fmt((d.value - (d.cost || 0)), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                          </div>
+                        )
+                      })
+                    }}
+                    onMouseMove={(e) => {
+                      setTooltip(prev => ({ ...prev, x: e.clientX, y: e.clientY }))
+                    }}
+                    onMouseLeave={() => {
+                      setActiveIdx(null)
+                      setTooltip(prev => ({ ...prev, visible: false }))
+                    }}
+                    onClick={(e) => {
+                      setActiveIdx(i)
+                      setTooltip({
+                        visible: true,
+                        x: e.clientX,
+                        y: e.clientY,
+                        content: (
+                          <div>
+                            <div className="fw-semibold">
+                              {d.label}
+                              {(() => {
+                                const v = (d.chartValue ?? d.value) || 0
+                                const pct = total > 0 ? (v / total) * 100 : 0
+                                return <span className="ms-1 text-body-secondary">({pct.toFixed(1)}%)</span>
+                              })()}
+                            </div>
+                            <div>Mevcut Değer: {fmt(d.value, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                            <div>Toplam Alım: {fmt(d.cost || 0, d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                            <div>Kar/Kazanç: {fmt((d.value - (d.cost || 0)), d.currency)} {d.currency === '₺' ? '₺' : (d.currency || '')}</div>
+                          </div>
+                        )
+                      })
+                    }}
+                  />
+                )
+              }
+              
               return (
                 <path key={d.label}
                   d={arc.d}
                   fill="none"
-                  stroke={colors[i % colors.length]}
+                  stroke={color}
                   strokeWidth={thickness}
                   strokeLinecap="butt"
-                  opacity={activeIdx === null || activeIdx === i ? 1 : 0.35}
+                  opacity={opacity}
                   onMouseEnter={(e) => {
                     setActiveIdx(i)
                     setTooltip({
@@ -129,9 +215,10 @@ const DonutChart = ({ data, size = 260, thickness = 34, totals = { tryTotal: 0, 
               let cum = 0
               return data.map((d, i) => {
                 const value = d.chartValue ?? d.value
+                const isFullCircle = data.length === 1 && Math.abs(value - total) < 1e-6
                 const start = (cum / total) * 2 * Math.PI
                 const end = ((cum + value) / total) * 2 * Math.PI
-                const mid = (start + end) / 2
+                const mid = isFullCircle ? Math.PI : (start + end) / 2 // Tek slice için merkezin altı
                 cum += value
                 const pct = total > 0 ? (value / total) * 100 : 0
                 const tooSmall = !(pct >= 6)
@@ -511,7 +598,7 @@ const Analtik = () => {
       })
       .sort((a, b) => b.value - a.value)
     return entries
-  }, [transactionsByPortfolio, priceMap, currencyMap, fxMap, portfolios])
+  }, [transactionsByPortfolio, priceMap, currencyMap, fxMap, usdTryTlPrice, portfolios, symbolsData])
 
   const totals = useMemo(() => {
     const tryTotal = donutData.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
@@ -609,7 +696,7 @@ const Analtik = () => {
       })
       .sort((a, b) => b.chartValue - a.chartValue)
     return entries
-  }, [transactionsByPortfolio, banks, priceMap, currencyMap, fxMap, usdTryTlPrice, portfolios])
+  }, [transactionsByPortfolio, banks, priceMap, currencyMap, fxMap, usdTryTlPrice, portfolios, symbolsData])
 
   const platformTotals = useMemo(() => {
     const tryTotal = platformDonutData.filter(d => d.currency === '₺' || d.currency === 'TRY').reduce((s, d) => s + d.value, 0)
@@ -998,7 +1085,17 @@ const Analtik = () => {
                 })()
                 const isOpen = !!expandedChartsByPortfolio[p.id]
                 return (
-                  <div key={p.id} className="portfoy-wrap" role="button" onClick={() => setExpandedChartsByPortfolio(prev => ({ ...prev, [p.id]: !prev[p.id] }))}>
+                  <div key={p.id} className="portfoy-wrap" role="button" onClick={() => {
+                    setExpandedChartsByPortfolio(prev => {
+                      // Eğer tıklanan portföy zaten açıksa, kapat (hepsini kapat)
+                      if (prev[p.id]) {
+                        return {}
+                      } else {
+                        // Sadece tıklanan portföyü aç, diğerlerini kapat
+                        return { [p.id]: true }
+                      }
+                    })
+                  }}>
                     <div className="name"> {p.name || 'Adsız portföy'}</div>
                     <div className="hisse-sayisi"> Hisse sayısı: {openCount}</div>
                     <div className="price">
@@ -1094,55 +1191,65 @@ const Analtik = () => {
           </>
         )
       })()}
-      <div className="d-flex align-items-center justify-content-between mb-4">
-        <h4 className="display-6 mb-0">
-          <i className="bi bi-pie-chart me-2"></i>Analtik
-        </h4>
+      {(() => {
+        // Hiçbir portföy açık değilse genel analtik chart'larını göster
+        const hasAnyPortfolioOpen = Object.values(expandedChartsByPortfolio).some(v => v === true)
+        if (hasAnyPortfolioOpen) return null
         
-      </div>
-      <div className="card shadow-sm border-0">
-        <div className="card-body">
-          <div className="d-flex align-items-center justify-content-between mb-3">
-            <div className="d-flex align-items-center gap-2">
-              <i className="bi bi-graph-up"></i>
-              <span className="fw-semibold">Sembol Borsa dağılımı</span>
+        return (
+          <>
+            <div className="d-flex align-items-center justify-content-between mb-4">
+              <h4 className="display-6 mb-0">
+                <i className="bi bi-pie-chart me-2"></i>Analtik
+              </h4>
+              
             </div>
-          </div>
-          <DonutChart data={donutData} totals={totals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} />
-        </div>
-      </div>
+            <div className="card shadow-sm border-0">
+              <div className="card-body">
+                <div className="d-flex align-items-center justify-content-between mb-3">
+                  <div className="d-flex align-items-center gap-2">
+                    <i className="bi bi-graph-up"></i>
+                    <span className="fw-semibold">Sembol Borsa dağılımı</span>
+                  </div>
+                </div>
+                <DonutChart data={donutData} totals={totals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} />
+              </div>
+            </div>
 
-      <div className="card shadow-sm border-0 mt-4">
-        <div className="card-body">
-          <div className="d-flex align-items-center justify-content-between mb-3">
-            <div className="d-flex align-items-center gap-2">
-              <i className="bi bi-bank2"></i>
-              <span className="fw-semibold">Platform para birimi dağılımı</span>
+            <div className="card shadow-sm border-0 mt-4">
+              <div className="card-body">
+                <div className="d-flex align-items-center justify-content-between mb-3">
+                  <div className="d-flex align-items-center gap-2">
+                    <i className="bi bi-bank2"></i>
+                    <span className="fw-semibold">Platform para birimi dağılımı</span>
+                  </div>
+                </div>
+                <DonutChart data={platformDonutData.map(d => {
+                  const bank = banks.find(b => (b.name && d.label?.startsWith(b.name)) || d.label?.startsWith(b.id))
+                  return { ...d, iconUrl: bank?.imageUrl }
+                })} totals={platformTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="platform" />
+              </div>
             </div>
-          </div>
-                      <DonutChart data={platformDonutData.map(d => {
-                        const bank = banks.find(b => (b.name && d.label?.startsWith(b.name)) || d.label?.startsWith(b.id))
-                        return { ...d, iconUrl: bank?.imageUrl }
-                      })} totals={platformTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="platform" />
-        </div>
-      </div>
 
-      <div className="card shadow-sm border-0 mt-4">
-        <div className="card-body">
-          <div className="d-flex align-items-center justify-content-between mb-3">
-            <div className="d-flex align-items-center gap-2">
-              <i className="bi bi-tags"></i>
-              <span className="fw-semibold">Hisse dağılımı</span>
+            <div className="card shadow-sm border-0 mt-4">
+              <div className="card-body">
+                <div className="d-flex align-items-center justify-content-between mb-3">
+                  <div className="d-flex align-items-center gap-2">
+                    <i className="bi bi-tags"></i>
+                    <span className="fw-semibold">Hisse dağılımı</span>
+                  </div>
+                </div>
+                <DonutChart data={symbolDonutData.map(d => {
+                  // d.label like "BTC (USD)", try to map symbol by name or id in symbolsData
+                  const nameToken = (d.label || '').split(' (')[0]
+                  const sym = symbolsData.find(s => (s.name || s.id) === nameToken)
+                  return { ...d, iconUrl: sym?.logoUrl }
+                })} totals={symbolTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="symbol" />
+              </div>
             </div>
-          </div>
-                      <DonutChart data={symbolDonutData.map(d => {
-                        // d.label like "BTC (USD)", try to map symbol by name or id in symbolsData
-                        const nameToken = (d.label || '').split(' (')[0]
-                        const sym = symbolsData.find(s => (s.name || s.id) === nameToken)
-                        return { ...d, iconUrl: sym?.logoUrl }
-                      })} totals={symbolTotals} usdTryTlPrice={usdTryTlPrice} fxMap={fxMap} labelMode="symbol" />
-        </div>
-      </div>
+          </>
+        )
+      })()}
     </div>
   );
 };
