@@ -441,6 +441,8 @@ const Anasayfa = () => {
         symbolsData={symbolsData}
         getDesiredPriceNum={getDesiredPriceNum}
         onShowBankHoldings={setShowBankHoldings}
+        percentageBySymbol={percentageBySymbol}
+        usdRate={parseNumber(tlPrices.USD)}
       />
             <h5 className="mb-2 mt-5 d-flex align-items-center gap-2"><i className="bi bi-building"></i> Platformlar</h5>
 

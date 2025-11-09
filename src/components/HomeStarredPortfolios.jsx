@@ -95,9 +95,63 @@ const HomeStarredPortfolios = ({ banks = [], portfolios, transactionsByPortfolio
             })
             return { base, current }
           })()
+          
+          // Portföyün günlük kazanç oranını hesapla (ağırlıklı ortalama)
+          const calculateDailyGain = () => {
+            let totalPortfolioValue = 0
+            let weightedDailyPct = 0
+            let totalDailyGainTRY = 0
+            
+            entries.forEach(({ symId, list, fifo }) => {
+              const cur = (list[0]?.birim === 'TRY' || list[0]?.birim === '₺') ? '₺' : (list[0]?.birim || '')
+              const symKey = (symId || '').toString().toUpperCase()
+              const curNum = Number(getDesiredPriceNum(symKey) || 0)
+              const currentVal = curNum > 0 ? Number(fifo.remainingAdet || 0) * curNum : 0
+              
+              if (currentVal > 0) {
+                const dailyPctRaw = percentageBySymbol.get ? percentageBySymbol.get(symKey) : undefined
+                const dailyPctNum = dailyPctRaw != null ? parseNumber(dailyPctRaw) : 0
+                
+                if (!isNaN(dailyPctNum)) {
+                  totalPortfolioValue += currentVal
+                  weightedDailyPct += currentVal * dailyPctNum
+                  
+                  // Her sembolün günlük kazancını hesapla ve TRY'ye çevir
+                  const dailyGainForSymbol = currentVal * (dailyPctNum / 100)
+                  if (cur === '₺' || cur === 'TRY') {
+                    totalDailyGainTRY += dailyGainForSymbol
+                  } else if (cur === 'USD' && usdRate > 0) {
+                    totalDailyGainTRY += dailyGainForSymbol * usdRate
+                  }
+                }
+              }
+            })
+            
+            const dailyPct = totalPortfolioValue > 0 ? weightedDailyPct / totalPortfolioValue : 0
+            return { dailyPct, dailyGainAmount: totalDailyGainTRY }
+          }
+          
+          const { dailyPct, dailyGainAmount } = calculateDailyGain()
+          const hasDailyPct = !isNaN(dailyPct) && dailyPct !== 0
+          const dailyPctClass = dailyPct > 0 ? 'text-success' : (dailyPct < 0 ? 'text-danger' : 'text-body-secondary')
+          
           return (
         <div className="portfoy-wrap" role="button" onClick={() => setExpandedStarred(prev => ({ ...prev, [p.id]: !prev[p.id] }))}>
-          <div className="name"> {p.name || 'Adsız portföy'}</div>
+          <div className="name d-flex flex-column">
+            <div className="d-flex align-items-center justify-content-between">
+              <span className='name-text'>{p.name || 'Adsız portföy'}</span>
+              {hasDailyPct && (
+                <span className={dailyPctClass}>
+                  ({dailyPct >= 0 ? '+' : ''}{Number(dailyPct).toFixed(2)}%)
+                </span>
+              )}
+            </div>
+            {hasDailyPct && (
+              <small className={dailyPctClass}>
+                Günlük kazanç: {formatNumber(Math.abs(dailyGainAmount), '₺')} ₺
+              </small>
+            )}
+          </div>
           <div className="hisse-sayisi"> Hisse sayısı: {openCount}</div>
 
           <div className="price">
@@ -136,7 +190,7 @@ const HomeStarredPortfolios = ({ banks = [], portfolios, transactionsByPortfolio
                 const usdCur = (totalsByCur.current['USD'] || 0)
                 const combinedTry = Number(tryCur || 0) + (usdRate > 0 ? Number(usdCur || 0) * Number(usdRate) : 0)
                 rows.push(
-                  <div key="combined-try" className="mt-1">
+                  <div key="combined-try" className="mt-1 price-toplam">
                     Toplam (₺): {formatNumber(combinedTry, '₺')} ₺
                   </div>
                 )
@@ -183,14 +237,67 @@ const HomeStarredPortfolios = ({ banks = [], portfolios, transactionsByPortfolio
             })
             return { base, current }
           })()
+          
+          // Portföyün günlük kazanç oranını hesapla (ağırlıklı ortalama)
+          const calculateDailyGain = () => {
+            let totalPortfolioValue = 0
+            let weightedDailyPct = 0
+            let totalDailyGainTRY = 0
+            
+            entries.forEach(({ symId, list, fifo }) => {
+              const cur = (list[0]?.birim === 'TRY' || list[0]?.birim === '₺') ? '₺' : (list[0]?.birim || '')
+              const symKey = (symId || '').toString().toUpperCase()
+              const curNum = Number(getDesiredPriceNum(symKey) || 0)
+              const currentVal = curNum > 0 ? Number(fifo.remainingAdet || 0) * curNum : 0
+              
+              if (currentVal > 0) {
+                const dailyPctRaw = percentageBySymbol.get ? percentageBySymbol.get(symKey) : undefined
+                const dailyPctNum = dailyPctRaw != null ? parseNumber(dailyPctRaw) : 0
+                
+                if (!isNaN(dailyPctNum)) {
+                  totalPortfolioValue += currentVal
+                  weightedDailyPct += currentVal * dailyPctNum
+                  
+                  // Her sembolün günlük kazancını hesapla ve TRY'ye çevir
+                  const dailyGainForSymbol = currentVal * (dailyPctNum / 100)
+                  if (cur === '₺' || cur === 'TRY') {
+                    totalDailyGainTRY += dailyGainForSymbol
+                  } else if (cur === 'USD' && usdRate > 0) {
+                    totalDailyGainTRY += dailyGainForSymbol * usdRate
+                  }
+                }
+              }
+            })
+            
+            const dailyPct = totalPortfolioValue > 0 ? weightedDailyPct / totalPortfolioValue : 0
+            
+            return { dailyPct, dailyGainAmount: totalDailyGainTRY }
+          }
+          
+          const { dailyPct, dailyGainAmount } = calculateDailyGain()
+          const hasDailyPct = !isNaN(dailyPct) && dailyPct !== 0
+          const dailyPctClass = dailyPct > 0 ? 'text-success' : (dailyPct < 0 ? 'text-danger' : 'text-body-secondary')
+          
           return (
             <div key={p.id} className="card card-anasayfa shadow-sm border-0">
               <div className="card-body d-flex align-items-center justify-content-between" role="button" onClick={() => setExpandedStarred(prev => ({ ...prev, [p.id]: !prev[p.id] }))}>
                 <div className="d-flex align-items-center gap-3">
-                  <div className="d-flex flex-column">
-                    <span className="fw-semibold d-flex align-items-center gap-2">
-                      {p.name || 'Adsız portföy'} <i className="bi bi-star-fill text-warning"></i>
+                  <div className="d-flex flex-column" style={{ flex: 1 }}>
+                    <span className="fw-semibold d-flex align-items-center justify-content-between gap-2">
+                      <span>
+                        {p.name || 'Adsız portföy'} <i className="bi bi-star-fill text-warning"></i>
+                      </span>
+                      {hasDailyPct && (
+                        <span className={dailyPctClass}>
+                          ({dailyPct >= 0 ? '+' : ''}{Number(dailyPct).toFixed(2)}%)
+                        </span>
+                      )}
                     </span>
+                    {hasDailyPct && (
+                      <small className={`d-block ${dailyPctClass}`}>
+                        Günlük kazanç: {formatNumber(Math.abs(dailyGainAmount), '₺')} ₺
+                      </small>
+                    )}
                     <small className="text-body-secondary d-block">{p.createdAt?.toDate?.().toLocaleString?.() || ''}</small>
                   </div>
                 </div>

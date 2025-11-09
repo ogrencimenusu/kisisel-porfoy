@@ -250,6 +250,7 @@ body.dark-theme .btn-outline-danger {
   position: absolute;
   top: 14px;
   right: 16px;
+  text-align: right;
 }
 .anasayfa-card .card-list .price {
   margin-top: 12px;
@@ -290,7 +291,7 @@ body.dark-theme .btn-outline-danger {
 }
 .anasayfa-portfoy .portfoy-wrap .hisse-sayisi {
   position: absolute;
-  top: 34px;
+  top: 2px;
   right: unset;
   font-size: 11px;
 }
@@ -300,6 +301,27 @@ body.dark-theme .btn-outline-danger {
     top: 14px;
     left: 16px;
     font-weight: bold;
+    text-align: right;
+    font-size: 11px;
+}
+.anasayfa-portfoy .portfoy-wrap .name span{
+  font-size: 12px;
+  text-align: right;
+}
+.anasayfa-portfoy .portfoy-wrap .name .name-text{
+  font-size: 12px;
+}
+
+.card-anasayfa .text-body-secondary{
+  font-size: 11px;
+}
+.card-anasayfa .text-end{
+  font-size: 12px;
+}
+  .card-anasayfa .fw-semibold{
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
 }
 .anasayfa-portfoy .portfoy-wrap .price {
   height: 200px;

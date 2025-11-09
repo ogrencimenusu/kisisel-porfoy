@@ -186,6 +186,9 @@ const HisseHesapHareketleri = ({ onBack }) => {
                 <div className="small text-body-secondary">
                   Toplam Maliyet: {formatNumber(e?.raw?.maaliyet || e?.raw?.fiyat)} {e?.raw?.birim || ''}
                 </div>
+                <div className="small text-body-secondary">
+                  Adet: {formatNumber(e?.adet || 0)}
+                </div>
                 <small className="text-body-secondary">{e.createdAt instanceof Date ? e.createdAt.toLocaleDateString() : ''}</small>
               </div>
             </div>
